@@ -1,0 +1,36 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# testing
+/coverage
+/test-results
+/playwright-report
+
+# next.js
+/.next/
+/out/
+/build
+
+# misc
+.DS_Store
+*.pem
+*.key
+
+# debug
+npm-debug.log*
+
+# Secrets: never commit real environment files. Only .env.example is tracked.
+.env
+.env.*
+!.env.example
+
+# vercel / supabase local state
+.vercel
+supabase/.temp
+supabase/.branches
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
