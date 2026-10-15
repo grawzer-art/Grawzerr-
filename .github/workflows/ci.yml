@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: Lint, types, tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  database:
+    name: SQL migration & RLS
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migration twice (idempotence) and run RLS tests
+        working-directory: supabase/tests
+        run: |
+          psql -v ON_ERROR_STOP=1 -q -c "create database jarvis_test;"
+          psql -d jarvis_test -v ON_ERROR_STOP=1 -q \
+            -f 00_supabase_shim.sql \
+            -f ../migrations/0001_jarvis_init.sql \
+            -f ../migrations/0001_jarvis_init.sql \
+            -f 10_rls.test.sql

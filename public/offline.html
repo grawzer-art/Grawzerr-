@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#020407" />
+    <title>JARVIS — hors ligne</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #020407; color: #e9f6fa;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+      main { min-height: 100%; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; text-align: center; padding: 24px; }
+      .ring { width: 120px; height: 120px; border-radius: 50%; border: 2px dashed rgba(0,229,255,.5);
+        box-shadow: 0 0 40px rgba(0,229,255,.25), inset 0 0 30px rgba(0,229,255,.2); margin-bottom: 28px; }
+      p { color: #8aa4ae; max-width: 320px; line-height: 1.5; }
+      button { margin-top: 16px; min-height: 44px; padding: 0 20px; border-radius: 12px; font-size: 15px;
+        border: 1px solid rgba(0,229,255,.4); background: rgba(0,229,255,.08); color: #7cf3ff; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="ring" aria-hidden="true"></div>
+      <h1 style="font-size: 20px; letter-spacing: .3em; font-weight: 600">JARVIS</h1>
+      <p>Connexion perdue. Je reviens dès que le réseau est rétabli — je ne peux pas réfléchir sans lui.</p>
+      <button onclick="location.reload()">Réessayer</button>
+    </main>
+  </body>
+</html>
