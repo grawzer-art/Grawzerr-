@@ -1,5 +1,12 @@
 import { PROVIDER_PRESETS } from "@/lib/ai/presets";
-import { aiConfig, allowedEmails, budgetConfig, keyLikeEnvNames, supabasePublicConfig } from "@/lib/config";
+import {
+  aiConfig,
+  allowedEmails,
+  budgetConfig,
+  keyLikeEnvNames,
+  supabasePublicConfig,
+  transcriptionConfig,
+} from "@/lib/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +46,8 @@ export async function GET() {
         // Names only, to diagnose a misspelt variable. Values are never read here.
         keyLikeEnvNames: ai.configured ? [] : keyLikeEnvNames(),
       },
+      // Whisper speech-to-text (Groq free tier); without it the app falls back to Safari dictation.
+      voice: { transcription: transcriptionConfig().configured },
       budget: budgetConfig(),
     },
     { headers: { "cache-control": "no-store" } },

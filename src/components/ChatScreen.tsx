@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { deleteMemory, listConversations, listMessages, loadSettings, updateMemory } from "@/lib/client/data";
 import { readNdjson } from "@/lib/client/ndjson";
+import { VoiceRecorder, canRecord, describeMicError, type RecordSession } from "@/lib/client/recorder";
 import { useClientValue } from "@/lib/client/useClientValue";
 import { useStatus } from "@/lib/client/useStatus";
 import { Speaker, canListen, canSpeak, listenOnce, takeSentences } from "@/lib/client/voice";
@@ -82,8 +83,14 @@ export default function ChatScreen() {
   const [voiceOut, setVoiceOut] = useState(false);
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [conversing, setConversing] = useState(false);
   const canSpeakHere = useClientValue(canSpeak, false);
   const canListenHere = useClientValue(canListen, false);
+  const canRecordHere = useClientValue(canRecord, false);
+  // Whisper (server) when available; Safari dictation otherwise.
+  const whisper = canRecordHere && status?.voice?.transcription === true;
+  const micAvailable = whisper || canListenHere;
 
   const abortRef = useRef<AbortController | null>(null);
   const speakerRef = useRef<Speaker | null>(null);
@@ -93,6 +100,21 @@ export default function ChatScreen() {
   const voiceOutRef = useRef(false);
   /** True once the user sent something: a late conversation restore must not overwrite it. */
   const touchedRef = useRef(false);
+  // Refs read by the hands-free loop, which outlives a single render.
+  const conversationIdRef = useRef<string | null>(conversationId);
+  const busyRef = useRef(false);
+  const conversingRef = useRef(false);
+  const recorderRef = useRef<VoiceRecorder | null>(null);
+  const sessionRef = useRef<RecordSession | null>(null);
+
+  const setConversation = useCallback((id: string | null) => {
+    conversationIdRef.current = id;
+    setConversationId(id);
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("c", id);
+    else url.searchParams.delete("c");
+    window.history.replaceState(null, "", url);
+  }, []);
 
   useEffect(() => {
     voiceOutRef.current = voiceOut;
@@ -125,10 +147,7 @@ export default function ChatScreen() {
       }
       const rows = await listMessages(sb, id);
       if (touchedRef.current) return;
-      setConversationId(id);
-      const url = new URL(window.location.href);
-      url.searchParams.set("c", id);
-      window.history.replaceState(null, "", url);
+      setConversation(id);
       setMessages(
         rows.map((r) => ({
           key: r.id,
@@ -140,7 +159,16 @@ export default function ChatScreen() {
       );
     };
     restore().catch(() => setNotice("Impossible de charger la conversation."));
-  }, []);
+  }, [setConversation]);
+
+  // Releases the microphone when leaving the screen.
+  useEffect(
+    () => () => {
+      conversingRef.current = false;
+      recorderRef.current?.close();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -168,29 +196,33 @@ export default function ChatScreen() {
   }, []);
 
   const interrupt = useCallback(() => {
+    conversingRef.current = false;
+    setConversing(false);
+    sessionRef.current?.cancel();
     abortRef.current?.abort();
     speakerRef.current?.stop();
     stopListenRef.current?.();
     setListening(false);
   }, []);
 
+  /** Sends a message and streams the reply. Resolves with the reply text (null on failure). */
   const send = useCallback(
-    async (raw: string) => {
+    async (raw: string): Promise<string | null> => {
       const text = raw.trim();
-      if (!text || busy) return;
+      if (!text || busyRef.current) return null;
       setNotice(null);
       touchedRef.current = true;
 
       if (!isSupabaseConfigured) {
         setNotice("Mode aperçu : connectez Supabase pour discuter avec JARVIS (voir Dashboard).");
-        return;
+        return null;
       }
       if (status && !status.aiConfigured) {
         setNotice("Aucun fournisseur IA n'est configuré : JARVIS ne peut pas encore répondre. Voir Dashboard > Diagnostic.");
-        return;
+        return null;
       }
 
-      const speakNow = voiceOutRef.current && canSpeak();
+      const speakNow = (voiceOutRef.current || conversingRef.current) && canSpeak();
       if (speakNow) Speaker.unlock();
       speakerRef.current?.stop();
 
@@ -202,8 +234,10 @@ export default function ChatScreen() {
         { key: botKey, role: "assistant", content: "", status: "streaming" },
       ]);
       setInput("");
+      busyRef.current = true;
       setBusy(true);
       setCore("thinking");
+      let reply: string | null = null;
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -217,7 +251,7 @@ export default function ChatScreen() {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: text, conversationId: conversationId ?? undefined }),
+          body: JSON.stringify({ message: text, conversationId: conversationIdRef.current ?? undefined }),
           signal: controller.signal,
         });
         if (!res.ok || !res.body) {
@@ -228,23 +262,22 @@ export default function ChatScreen() {
             content: err?.message ?? `Erreur ${res.status}.`,
           }));
           setCore("idle");
-          return;
+          return null;
         }
 
+        let replyText = "";
         let started = false;
         for await (const ev of readNdjson<ChatStreamEvent>(res.body)) {
           if (ev.type === "meta") {
-            setConversationId(ev.conversationId);
+            setConversation(ev.conversationId);
             setFresh(false);
-            const url = new URL(window.location.href);
-            url.searchParams.set("c", ev.conversationId);
-            window.history.replaceState(null, "", url);
             setMessages((list) => list.map((m) => (m.key === userKey ? { ...m, tone: ev.tone } : m)));
           } else if (ev.type === "delta") {
             if (!started) {
               started = true;
               if (!speaker) setCore("speaking");
             }
+            replyText += ev.text;
             patchBot((m) => ({ ...m, content: m.content + ev.text }));
             if (speaker) {
               speechBuffer += ev.text;
@@ -255,6 +288,7 @@ export default function ChatScreen() {
           } else if (ev.type === "done") {
             if (speaker && speechBuffer.trim()) speaker.enqueue(speechBuffer);
             speechBuffer = "";
+            reply = replyText;
             const u = ev.usage;
             const tokens = `${u.estimated ? "≈" : ""}${(u.inputTokens + u.outputTokens).toLocaleString("fr-FR")} jetons`;
             const cost = u.costUsd > 0 ? ` · ${u.costUsd.toFixed(4)} $` : "";
@@ -288,6 +322,7 @@ export default function ChatScreen() {
           }));
         }
       } finally {
+        busyRef.current = false;
         setBusy(false);
         abortRef.current = null;
         setMessages((list) =>
@@ -295,9 +330,118 @@ export default function ChatScreen() {
         );
         setCore((c) => (speakerRef.current?.busy ? "speaking" : c === "speaking" || c === "thinking" ? "idle" : c));
       }
+      return reply;
     },
-    [busy, conversationId, getSpeaker, status],
+    [getSpeaker, setConversation, status],
   );
+
+  /**
+   * Records one utterance (stops by itself after a pause) and returns its
+   * transcript, or null when nothing usable was said.
+   */
+  const captureSpeech = useCallback(async (inConversation = false): Promise<string | null> => {
+    const recorder = (recorderRef.current ??= new VoiceRecorder());
+    try {
+      await recorder.open();
+    } catch (err) {
+      setNotice(describeMicError(err));
+      return null;
+    }
+    setListening(true);
+    setCore("listening");
+    if (!recorder.detectsPauses) setNotice("Touchez le micro quand vous avez fini de parler.");
+    let result;
+    try {
+      const session = recorder.record();
+      sessionRef.current = session;
+      stopListenRef.current = () => session.stop();
+      result = await session.done;
+    } catch {
+      result = { kind: "cancelled" as const };
+    } finally {
+      sessionRef.current = null;
+      stopListenRef.current = null;
+      // iOS plays speech quietly while the microphone is open: release it before JARVIS answers.
+      recorder.release();
+      setListening(false);
+    }
+    if (result.kind === "no_speech") {
+      setCore("idle");
+      setNotice(
+        inConversation
+          ? "Conversation en pause : je n'entends plus rien. Touchez le noyau pour reprendre."
+          : "Je n'ai rien entendu. Touchez le micro et parlez normalement.",
+      );
+      return null;
+    }
+    if (result.kind !== "audio") {
+      setCore("idle");
+      return null;
+    }
+
+    setTranscribing(true);
+    setCore("thinking");
+    try {
+      const form = new FormData();
+      form.append("audio", result.blob, "audio");
+      const res = await fetch("/api/transcribe", { method: "POST", body: form });
+      const data = (await res.json().catch(() => null)) as { text?: string; message?: string; detail?: string } | null;
+      if (!res.ok) {
+        setNotice(
+          `${data?.message ?? `Transcription impossible (erreur ${res.status}).`}${data?.detail ? ` Message du fournisseur : « ${data.detail} »` : ""}`,
+        );
+        return null;
+      }
+      const text = data?.text?.trim() ?? "";
+      if (!text) setNotice("Je n'ai pas compris. Pouvez-vous répéter ?");
+      return text || null;
+    } catch {
+      setNotice("Transcription interrompue : vérifiez la connexion.");
+      return null;
+    } finally {
+      setTranscribing(false);
+      setCore((c) => (c === "thinking" ? "idle" : c));
+    }
+  }, []);
+
+  /** Hands-free mode: listen, answer aloud, listen again, until stopped or silence. */
+  const startConversation = useCallback(async () => {
+    if (conversingRef.current || busyRef.current) return;
+    setNotice(null);
+    touchedRef.current = true;
+    Speaker.unlock();
+    speakerRef.current?.stop();
+    conversingRef.current = true;
+    setConversing(true);
+    try {
+      while (conversingRef.current) {
+        const heard = await captureSpeech(true);
+        if (!heard || !conversingRef.current) break;
+        const reply = await send(heard);
+        if (reply === null || !conversingRef.current) break;
+        const speaker = speakerRef.current;
+        if (speaker?.busy) {
+          // iOS sometimes never reports the end of speech: do not wait forever.
+          const watchdog = new Promise<void>((r) => setTimeout(r, 8000 + reply.length * 90));
+          await Promise.race([speaker.whenIdle(), watchdog]);
+        }
+      }
+    } finally {
+      conversingRef.current = false;
+      setConversing(false);
+    }
+  }, [captureSpeech, send]);
+
+  const stopConversation = useCallback(() => {
+    conversingRef.current = false;
+    setConversing(false);
+    sessionRef.current?.cancel();
+    stopListenRef.current = null;
+    recorderRef.current?.release();
+    speakerRef.current?.stop();
+    setListening(false);
+    setCore("idle");
+  }, []);
 
   const toggleListen = () => {
     if (listening) {
@@ -307,6 +451,11 @@ export default function ChatScreen() {
     speakerRef.current?.stop();
     setNotice(null);
     if (voiceOutRef.current) Speaker.unlock();
+    if (whisper) {
+      touchedRef.current = true;
+      void captureSpeech().then((text) => text && send(text));
+      return;
+    }
     const stop = listenOnce({
       onInterim: (t) => setInput(t),
       onFinal: (t) => {
@@ -354,22 +503,41 @@ export default function ChatScreen() {
     touchedRef.current = true;
     setFresh(true);
     setMessages([]);
-    setConversationId(null);
+    setConversation(null);
     setNotice(null);
     setCore("idle");
-    const url = new URL(window.location.href);
-    url.searchParams.delete("c");
-    window.history.replaceState(null, "", url);
   };
 
   const empty = messages.length === 0;
-  const caption = busy && core === "speaking" && !speaking ? "Réponse" : CORE_STATE_LABELS[core];
+  const caption = transcribing
+    ? "Transcription"
+    : busy && core === "speaking" && !speaking
+      ? "Réponse"
+      : core === "idle" && conversing
+        ? "Conversation"
+        : CORE_STATE_LABELS[core];
+  // The core starts a spoken conversation when JARVIS can both hear and speak.
+  const coreTalks = whisper && canSpeakHere;
   const setupMissing = !isSupabaseConfigured || (status !== null && !status.aiConfigured);
 
   return (
     <div className="screen-fixed">
       <div className="core-stage" data-size={empty ? "large" : "compact"}>
-        <Core state={core} className="core-canvas" />
+        {coreTalks ? (
+          <button
+            type="button"
+            className="core-button"
+            data-active={conversing}
+            onClick={() => (conversing ? stopConversation() : void startConversation())}
+            disabled={!conversing && busy}
+            aria-pressed={conversing}
+            aria-label={conversing ? "Arrêter la conversation vocale" : "Démarrer une conversation vocale"}
+          >
+            <Core state={core} className="core-canvas" />
+          </button>
+        ) : (
+          <Core state={core} className="core-canvas" />
+        )}
         <span className="core-caption" aria-live="polite">
           {caption}
         </span>
@@ -412,7 +580,9 @@ export default function ChatScreen() {
             <p className="lead" style={{ marginBottom: 12 }}>
               {setupMissing
                 ? "Mon interface est prête. Il me manque encore une mémoire et un cerveau : voyez le Dashboard."
-                : "Je vous écoute. Écrivez, ou touchez le micro."}
+                : coreTalks
+                  ? "Je vous écoute. Écrivez, touchez le micro, ou touchez le noyau pour une conversation à voix haute."
+                  : "Je vous écoute. Écrivez, ou touchez le micro."}
             </p>
             {setupMissing && (
               <Link className="btn btn-sm" href="/dashboard">
@@ -508,13 +678,13 @@ export default function ChatScreen() {
           void send(input);
         }}
       >
-        {canListenHere && (
+        {micAvailable && (
           <button
             type="button"
             className="icon-btn"
             data-active={listening}
             onClick={toggleListen}
-            disabled={busy}
+            disabled={busy || transcribing}
             aria-pressed={listening}
             aria-label={listening ? "Arrêter l'écoute" : "Parler à JARVIS"}
           >

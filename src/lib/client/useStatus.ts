@@ -18,6 +18,7 @@ export interface AppStatus {
     keyEnv: string;
     keyLikeEnvNames?: string[];
   };
+  voice?: { transcription: boolean };
   budget?: { monthlyBudgetUsd: number; dailyRequestLimit: number; dailyTokenLimit: number; perMinuteLimit: number };
 }
 

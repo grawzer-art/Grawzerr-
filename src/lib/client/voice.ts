@@ -110,6 +110,7 @@ export class Speaker {
   private queue: string[] = [];
   private speaking = false;
   private voice: SpeechSynthesisVoice | null = null;
+  private idleWaiters: (() => void)[] = [];
 
   constructor(private opts: SpeakerOptions = {}) {}
 
@@ -131,6 +132,18 @@ export class Speaker {
     return this.speaking || this.queue.length > 0;
   }
 
+  /** Resolves once everything queued has been spoken (or stopped). */
+  whenIdle(): Promise<void> {
+    if (!this.busy) return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+
+  private notifyIdle() {
+    const waiters = this.idleWaiters;
+    this.idleWaiters = [];
+    waiters.forEach((w) => w());
+  }
+
   enqueue(text: string) {
     const clean = toSpeakable(text);
     if (!clean || !canSpeak()) return;
@@ -145,6 +158,7 @@ export class Speaker {
         this.speaking = false;
         this.opts.onEnd?.();
       }
+      this.notifyIdle();
       return;
     }
     const u = new SpeechSynthesisUtterance(text);
@@ -168,6 +182,7 @@ export class Speaker {
       this.speaking = false;
       this.opts.onEnd?.();
     }
+    this.notifyIdle();
   }
 }
 

@@ -18,7 +18,7 @@ export const MODULES: ModuleInfo[] = [
   { name: "Garde-fous de consommation", state: "ready", phase: 1, detail: "Plafonds par minute, 24 h et budget mensuel." },
   { name: "Mémoire personnelle", state: "ready", phase: 2, detail: "Ajout, correction, obsolescence et suppression manuels." },
   { name: "Détection du ton", state: "experimental", phase: 2, detail: "Heuristique transparente, affichée sous vos messages." },
-  { name: "Voix (synthèse et dictée)", state: "experimental", phase: 2, detail: "Voix natives de l'iPhone ; la dictée dépend de Safari/Siri." },
+  { name: "Voix & conversation mains libres", state: "experimental", phase: 2, detail: "Écoute par Whisper (Groq, gratuit), fin de phrase détectée, noyau à toucher pour converser ; voix natives de l'iPhone." },
   { name: "Suggestions de souvenirs par JARVIS", state: "experimental", phase: 2, detail: "JARVIS propose dans la conversation, vous validez d'un geste (Retenir / Ignorer)." },
   { name: "Recherche sémantique & résumés auto", state: "planned", phase: 2, detail: "Embeddings pgvector + résumés des longues conversations." },
   { name: "Notes, rappels & notifications push", state: "planned", phase: 2, detail: "Web Push iOS 16.4+ (app installée)." },
