@@ -106,4 +106,4 @@ export type ChatStreamEvent =
       usage: { inputTokens: number; outputTokens: number; estimated: boolean; costUsd: number };
       warnings: string[];
     }
-  | { type: "error"; code: string; message: string };
+  | { type: "error"; code: string; message: string; reason?: string };

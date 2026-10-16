@@ -2,11 +2,13 @@ import { z } from "zod";
 
 import { estimateCostUsd, estimateTokens } from "@/lib/ai/pricing";
 import { createProvider } from "@/lib/ai/registry";
-import { ProviderError, describeProviderError } from "@/lib/ai/types";
+import { ProviderError, describeKey, describeProviderError } from "@/lib/ai/types";
 import { checkBudget, normalizeTurns, trimHistory } from "@/lib/budget";
 import { aiConfig, budgetConfig } from "@/lib/config";
 import { DEFAULT_SETTINGS, buildSystemPrompt } from "@/lib/personality";
+import { isSameOrigin } from "@/lib/server/http";
 import { logAction } from "@/lib/server/log";
+import { logServer } from "@/lib/server/logger";
 import { readUsageSnapshot } from "@/lib/server/usage";
 import { requireUser } from "@/lib/supabase/server";
 import { detectTone } from "@/lib/tone";
@@ -27,18 +29,6 @@ function jsonError(status: number, code: string, message: string) {
   return Response.json({ type: "error", code, message } satisfies ChatStreamEvent, { status });
 }
 
-/** Rejects cross-site requests (defence in depth on top of SameSite cookies). */
-function isSameOrigin(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true; // same-origin fetches from some browsers omit it
-  try {
-    const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
-    return new URL(origin).host === host;
-  } catch {
-    return false;
-  }
-}
-
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return jsonError(403, "forbidden_origin", "Origine de la requête refusée.");
   const auth = await requireUser();
@@ -55,13 +45,15 @@ export async function POST(request: Request) {
   const cfg = aiConfig();
   const provider = createProvider();
   if (!provider) {
+    logServer("warn", "chat.ai_not_configured", { provider: cfg.provider, key: describeKey(cfg.apiKey).format });
     return jsonError(
       503,
       "ai_not_configured",
       `Aucun fournisseur IA n'est configuré. Ajoutez la clé ${cfg.provider.toUpperCase()} dans les variables d'environnement Vercel (voir docs/CONFIGURATION.md).`,
     );
   }
-  const maxTokens = cfg.provider === "anthropic" ? 4096 : 2048;
+  // Gemini counts its internal "thinking" in maxOutputTokens: leave it room (free tier, no cost).
+  const maxTokens = cfg.provider === "anthropic" ? 4096 : cfg.provider === "gemini" ? 8192 : 2048;
 
   // ── Conversation ────────────────────────────────────────────────
   let conversationId = body.conversationId;
@@ -136,6 +128,7 @@ export async function POST(request: Request) {
     worstCaseCostUsd: estimateCostUsd(cfg.model, cfg.paid, inputEstimate, maxTokens),
   });
   if (!decision.allowed) {
+    logServer("warn", "chat.blocked", { code: decision.code, provider: cfg.provider, model: cfg.model });
     await logAction(supabase, user.id, "chat.blocked", "blocked", { code: decision.code });
     return jsonError(429, decision.code ?? "blocked", decision.message ?? "Requête bloquée par les garde-fous.");
   }
@@ -188,7 +181,9 @@ export async function POST(request: Request) {
       let text = "";
       let usage: { inputTokens: number; outputTokens: number } | null = null;
       let stop = "end";
-      let failure: { code: string; message: string } | null = null;
+      let failure: { code: string; message: string; reason?: string; status?: number; billed: boolean } | null =
+        null;
+      const startedAt = Date.now();
 
       try {
         for await (const ev of provider.stream({ system, messages: turns, maxTokens, signal: request.signal })) {
@@ -205,15 +200,39 @@ export async function POST(request: Request) {
         if (request.signal.aborted) {
           stop = "interrupted";
         } else if (err instanceof ProviderError) {
-          failure = { code: `provider_${err.kind}`, message: describeProviderError(err) };
+          failure = {
+            code: `provider_${err.kind}`,
+            message: describeProviderError(err),
+            reason: err.reason,
+            status: err.status,
+            // A request rejected with an HTTP error before any output is not billed.
+            billed: text.length > 0 || err.status === undefined,
+          };
+          logServer("error", "ai.error", {
+            provider: provider.id,
+            model: provider.model,
+            kind: err.kind,
+            httpStatus: err.status,
+            reason: err.reason,
+            detail: err.detail,
+            keyFormat: describeKey(cfg.apiKey).format,
+            keyLength: cfg.apiKey.length,
+            partialChars: text.length,
+          });
         } else {
-          failure = { code: "internal_error", message: "Erreur inattendue pendant la réponse." };
+          failure = { code: "internal_error", message: "Erreur inattendue pendant la réponse.", billed: true };
+          logServer("error", "chat.internal_error", {
+            provider: provider.id,
+            model: provider.model,
+            error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+          });
         }
       }
 
       // Usage is recorded even for interrupted or failed calls: tokens may have been billed.
-      const estimated = usage === null;
-      const inputTokens = usage?.inputTokens ?? inputEstimate;
+      const notBilled = failure !== null && !failure.billed;
+      const estimated = usage === null && !notBilled;
+      const inputTokens = usage?.inputTokens ?? (notBilled ? 0 : inputEstimate);
       const outputTokens = usage?.outputTokens ?? estimateTokens(text);
       const costUsd = estimateCostUsd(provider.model, cfg.paid, inputTokens, outputTokens);
       await supabase.from("usage_events").insert({
@@ -259,13 +278,27 @@ export async function POST(request: Request) {
         model: provider.model,
         stop,
         error: failure?.code,
+        reason: failure?.reason,
+        httpStatus: failure?.status,
         inputTokens,
         outputTokens,
         estimatedCostUsd: costUsd,
       });
 
+      if (!failure) {
+        logServer("info", "ai.reply", {
+          provider: provider.id,
+          model: provider.model,
+          stop,
+          ms: Date.now() - startedAt,
+          inputTokens,
+          outputTokens,
+          tokensEstimated: estimated,
+        });
+      }
+
       if (failure) {
-        send({ type: "error", code: failure.code, message: failure.message });
+        send({ type: "error", code: failure.code, message: failure.message, reason: failure.reason });
       } else {
         send({
           type: "done",

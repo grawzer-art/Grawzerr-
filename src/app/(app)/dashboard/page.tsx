@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import AiCheck from "@/components/AiCheck";
 import ModuleList from "@/components/ModuleList";
 import { countRows, listUsageSince } from "@/lib/client/data";
 import { useStatus } from "@/lib/client/useStatus";
@@ -109,6 +110,7 @@ export default function DashboardPage() {
             {status.ai.paid ? "payant à l'usage" : "niveau gratuit"}. {status.ai.note}
           </p>
         )}
+        {status?.authenticated && status.aiConfigured && <AiCheck />}
       </section>
 
       <section className="panel">

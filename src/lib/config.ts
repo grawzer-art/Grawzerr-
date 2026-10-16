@@ -33,6 +33,18 @@ export function isEmailAllowed(email: string | null | undefined): boolean {
   return allowedEmails().includes(email.trim().toLowerCase());
 }
 
+/**
+ * Cleans a key pasted into the Vercel dashboard: surrounding whitespace or
+ * quotes, a "Bearer " prefix or a "NAME=" prefix copied by mistake.
+ */
+export function cleanApiKey(raw: string | undefined, envName: string): string {
+  let key = (raw ?? "").trim();
+  if (key.startsWith(`${envName}=`)) key = key.slice(envName.length + 1).trim();
+  key = key.replace(/^["'`]+|["'`]+$/g, "").trim();
+  key = key.replace(/^Bearer\s+/i, "").trim();
+  return key;
+}
+
 export interface AiConfig {
   provider: ProviderId;
   model: string;
@@ -48,8 +60,8 @@ export function aiConfig(): AiConfig {
   const rawProvider = (process.env.JARVIS_AI_PROVIDER ?? "gemini").trim().toLowerCase();
   const provider: ProviderId = isProviderId(rawProvider) ? rawProvider : "gemini";
   const preset = PROVIDER_PRESETS[provider];
-  const model = (process.env.JARVIS_AI_MODEL ?? "").trim() || preset.defaultModel;
-  const apiKey = (process.env[preset.apiKeyEnv] ?? "").trim();
+  const model = (process.env.JARVIS_AI_MODEL ?? "").trim().replace(/^["'`]+|["'`]+$/g, "") || preset.defaultModel;
+  const apiKey = cleanApiKey(process.env[preset.apiKeyEnv], preset.apiKeyEnv);
   const freeOverride = process.env.JARVIS_PROVIDER_IS_FREE?.trim().toLowerCase();
   let paid = preset.isPaid(model);
   if (freeOverride === "false") paid = true;

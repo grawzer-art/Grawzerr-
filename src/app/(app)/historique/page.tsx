@@ -16,6 +16,7 @@ const ACTION_LABELS: Record<string, string> = {
   "memory.delete": "Souvenir supprimé",
   "settings.update": "Paramètres modifiés",
   "conversation.delete": "Conversation supprimée",
+  "ai.check": "Test de connexion IA",
 };
 
 const STATUS_VARIANT = { success: "ok", failure: "danger", blocked: "warn", pending: "off" } as const;
@@ -122,6 +123,7 @@ export default function HistoryPage() {
                     {typeof e.detail.model === "string" ? ` · ${e.detail.model}` : ""}
                     {typeof e.detail.code === "string" ? ` · ${e.detail.code}` : ""}
                     {typeof e.detail.error === "string" ? ` · ${e.detail.error}` : ""}
+                    {typeof e.detail.reason === "string" ? ` · ${e.detail.reason}` : ""}
                   </div>
                 </li>
               ))}

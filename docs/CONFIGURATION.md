@@ -42,7 +42,7 @@ Le script est rejouable sans danger. Il crée les tables, active la sécurité R
 ## Étape 2 — Une clé IA gratuite (Google Gemini)
 
 1. Va sur **aistudio.google.com** → connecte-toi avec un compte Google.
-2. **Get API key → Create API key**. Copie la clé (`AIza…`).
+2. **Get API key → Create API key**. Copie la clé : depuis 2026, elle commence par **`AQ.`** (les anciennes commençaient par `AIza` ; les deux formats fonctionnent avec JARVIS).
 3. **Ne clique pas** sur les options de facturation (« Set up billing », « Upgrade »). Sans facturation, Google ne peut rien te facturer : au-delà du quota gratuit, les requêtes sont simplement refusées.
 
 À savoir : les données envoyées au niveau gratuit de Gemini peuvent être utilisées par Google pour améliorer ses produits. Évite d'y confier des informations très sensibles, ou choisis un autre fournisseur (voir `docs/ARCHITECTURE.md`).
@@ -98,7 +98,24 @@ Si un déploiement Preview demande une connexion Vercel, c'est la protection des
 
 ## Étape 5 — Vérifier
 
-Dans JARVIS → **Dashboard** → *Diagnostic* : les trois lignes doivent être **OK**. Ensuite, écris « Bonjour » sur l'écran JARVIS.
+1. Dans JARVIS → **Dashboard** → *Diagnostic* : les trois lignes doivent être **OK**.
+2. Touche **« Tester la connexion IA »** : JARVIS interroge Google sur la clé et le modèle **sans générer de texte** (aucun jeton, aucun coût). Le résultat affiche le format de la clé (jamais sa valeur), le code HTTP et le motif exact donné par Google.
+3. Écris « Bonjour » sur l'écran JARVIS.
+
+### Lire les logs serveur depuis l'iPhone
+
+Vercel → projet → **Logs** (ou *Deployments* → le déploiement → *Logs*). Chaque événement est une ligne JSON : `ai.reply` (réponse réussie), `ai.error` (échec avec `kind`, `httpStatus`, `reason`), `ai.check` (test du Dashboard), `chat.blocked` (garde-fou). Les clés n'y figurent jamais : seuls leur format et leur longueur sont journalisés.
+
+### Motifs d'erreur Gemini
+
+| Ce que montre JARVIS (code HTTP · motif) | Signification | Que faire |
+|---|---|---|
+| `401 · ACCESS_TOKEN_TYPE_UNSUPPORTED` ou `400 · API_KEY_INVALID` | Google ne reconnaît pas la clé | Créer une nouvelle clé dans AI Studio, la recoller dans Vercel, redéployer |
+| `403 · SERVICE_DISABLED` | API Gemini non activée sur le projet de la clé | Créer la clé depuis AI Studio (qui active l'API automatiquement) |
+| `403 · API_KEY_…_BLOCKED` | Restrictions de clé (site, IP, API) | Retirer les restrictions de la clé |
+| `404` | Modèle inconnu | Supprimer `JARVIS_AI_MODEL` ou mettre un modèle existant (ex. `gemini-3.5-flash`) |
+| `429` « quota » | Quota gratuit épuisé | Attendre la réinitialisation (quotidienne). Ne pas activer la facturation |
+| `429` sans quota | Trop de requêtes par minute | Patienter une minute |
 
 ### Dépannage
 
@@ -108,7 +125,8 @@ Dans JARVIS → **Dashboard** → *Diagnostic* : les trois lignes doivent être 
 | « Identifiants incorrects » | Utilisateur non créé, ou *Auto Confirm* non coché |
 | « Ce compte n'est pas autorisé » | `JARVIS_ALLOWED_EMAILS` ne contient pas ton e-mail exact |
 | « Aucun fournisseur IA n'est configuré » | Clé IA absente ou nom de variable incorrect |
-| « Le fournisseur IA refuse la clé API » | Clé invalide ou révoquée |
+| « Google indique que cette clé n'est pas valide » | Clé tronquée, supprimée, ou variable modifiée sans redéploiement (voir « Motifs d'erreur Gemini ») |
+| Clé ajoutée mais rien ne change | Variable cochée pour *Production* alors que tu testes une adresse *Preview* (ou l'inverse), ou pas de redéploiement |
 | « limite temporairement les requêtes » | Quota gratuit par minute/jour atteint : réessaie plus tard |
 | Erreur `42501` / `permission denied` | Script SQL non exécuté (étape 1.a) |
 | Le site ne répond plus après quelques jours | Projet Supabase en pause : *Restore project* |
