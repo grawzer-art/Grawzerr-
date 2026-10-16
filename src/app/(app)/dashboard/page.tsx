@@ -89,7 +89,15 @@ export default function DashboardPage() {
           <Check
             ok={status?.aiConfigured}
             label={`Fournisseur IA${status?.ai ? ` — ${status.ai.label}` : ""}`}
-            hint="Ajoutez la clé API du fournisseur choisi (ex. GEMINI_API_KEY) dans Vercel."
+            hint={
+              status?.ai
+                ? `Variable attendue : ${status.ai.keyEnv} (nom exact, en majuscules). Ajoutez-la dans Vercel pour Production, puis redéployez.${
+                    status.ai.keyLikeEnvNames?.length
+                      ? ` Variables proches trouvées : ${status.ai.keyLikeEnvNames.join(", ")}.`
+                      : " Aucune variable de clé trouvée dans ce déploiement."
+                  }`
+                : "Ajoutez la clé API du fournisseur choisi dans Vercel."
+            }
           />
           <Check
             ok={status?.allowlistConfigured}

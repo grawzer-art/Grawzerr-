@@ -70,3 +70,19 @@ describe("cleanApiKey", () => {
     expect(c.model).toBe("gemini-3.5-flash");
   });
 });
+
+describe("keyLikeEnvNames", () => {
+  it("lists only names of key-like variables, never values", async () => {
+    const { keyLikeEnvNames } = await import("@/lib/config");
+    const names = keyLikeEnvNames({
+      GROK_API_KEY: "gsk_secret",
+      JARVIS_AI_PROVIDER: "groq",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "pub",
+      VERCEL_URL: "x",
+      PATH: "/bin",
+      GEMINI_API_KEY: "AQ.secret",
+    } as unknown as NodeJS.ProcessEnv);
+    expect(names).toEqual(["GEMINI_API_KEY", "GROK_API_KEY"]);
+    expect(names.join()).not.toContain("secret");
+  });
+});
