@@ -52,7 +52,7 @@ export default function AiCheck() {
           {result.error && <div style={{ marginTop: 4 }}>{result.error.message}</div>}
           {result.error?.detail && (
             <div className="mono small" style={{ marginTop: 6 }}>
-              Message de Google : « {result.error.detail} »
+              Message de {result.label} : « {result.error.detail} »
             </div>
           )}
           <div className="mono small" style={{ marginTop: 8, opacity: 0.85 }}>

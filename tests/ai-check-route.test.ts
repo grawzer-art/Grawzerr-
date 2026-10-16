@@ -123,14 +123,14 @@ describe("POST /api/ai/check — Groq (free, OpenAI-compatible)", () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [], choices: [] })));
     vi.stubGlobal("fetch", fetchMock);
     const { json } = await check();
-    expect(json).toMatchObject({ ok: true, generation: true, provider: "groq", model: "llama-3.3-70b-versatile" });
+    expect(json).toMatchObject({ ok: true, generation: true, provider: "groq", model: "openai/gpt-oss-120b" });
     const [keyUrl, keyInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(keyUrl).toBe("https://api.groq.com/openai/v1/models");
     expect(keyInit.method).toBe("GET");
     const [genUrl, genInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
     expect(genUrl).toBe("https://api.groq.com/openai/v1/chat/completions");
     const body = JSON.parse(genInit.body as string);
-    expect(body).toMatchObject({ model: "llama-3.3-70b-versatile", max_completion_tokens: 16 });
+    expect(body).toMatchObject({ model: "openai/gpt-oss-120b", max_completion_tokens: 16 });
     expect(body.stream).toBeUndefined();
     expect(JSON.stringify(json)).not.toContain("gsk_FAKE");
   });
