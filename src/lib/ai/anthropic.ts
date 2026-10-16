@@ -58,7 +58,7 @@ export class AnthropicProvider implements AiProvider {
     try {
       // Model metadata lookup: authenticated, generates no tokens.
       await this.client.models.retrieve(this.model, {}, { signal });
-      return { ok: true };
+      return { ok: true, generation: false };
     } catch (err) {
       const pe = this.toProviderError(err);
       if (pe) return { ok: false, error: pe };

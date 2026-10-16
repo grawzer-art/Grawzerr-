@@ -26,17 +26,61 @@ beforeEach(() => {
 });
 
 describe("POST /api/ai/check", () => {
-  it("reports success without exposing the key", async () => {
+  it("reports success (metadata + minimal generation on the free tier) without exposing the key", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ name: "models/gemini-flash-latest" })));
     vi.stubGlobal("fetch", fetchMock);
     const { json } = await check();
-    expect(json).toMatchObject({ ok: true, provider: "gemini", model: "gemini-flash-latest", keyEnv: "GEMINI_API_KEY" });
+    expect(json).toMatchObject({
+      ok: true,
+      generation: true,
+      provider: "gemini",
+      model: "gemini-flash-latest",
+      keyEnv: "GEMINI_API_KEY",
+    });
     expect(json.key.format).toMatch(/^AQ\./);
     expect(JSON.stringify(json)).not.toContain(FAKE_KEY);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest");
-    expect(init.method).toBe("GET"); // metadata only: no generation, no tokens
+    expect(init.method).toBe("GET");
+    const [genUrl] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(genUrl).toContain(":generateContent");
+    // The probe is recorded so the rate guards see it; free tier, cost 0.
+    expect(db.tables.usage_events.at(-1)).toMatchObject({ kind: "check", estimated_cost_usd: 0 });
     expect(db.tables.action_log.at(-1)).toMatchObject({ action: "ai.check", status: "success" });
+  });
+
+  it("returns Google's own message when generation is refused (403 denied access)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const responses = [
+      new Response(JSON.stringify({ name: "models/gemini-flash-latest" })),
+      new Response(
+        JSON.stringify({
+          error: { code: 403, message: "Your project has been denied access. Please contact support.", status: "PERMISSION_DENIED" },
+        }),
+        { status: 403 },
+      ),
+    ];
+    vi.stubGlobal("fetch", vi.fn(async () => responses.shift()!));
+    const { json } = await check();
+    expect(json.ok).toBe(false);
+    expect(json.error).toMatchObject({
+      kind: "permission",
+      httpStatus: 403,
+      reason: "PERMISSION_DENIED",
+      detail: "Your project has been denied access. Please contact support.",
+    });
+  });
+
+  it("never sends a generation probe for a paid provider", async () => {
+    vi.stubEnv("JARVIS_AI_PROVIDER", "openai");
+    vi.stubEnv("OPENAI_API_KEY", "sk-test-0000000000000000");
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+    const { json } = await check();
+    expect(json).toMatchObject({ ok: true, generation: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].method).toBe("GET");
+    expect(db.tables.usage_events ?? []).toHaveLength(0);
   });
 
   it("explains a rejected key", async () => {

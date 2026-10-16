@@ -15,15 +15,24 @@ export type StreamEvent =
   | { type: "usage"; inputTokens: number; outputTokens: number }
   | { type: "stop"; reason: "end" | "max_tokens" | "refusal" | "other" };
 
-/** Result of a zero-cost connectivity check (no text is generated). */
-export type ProviderCheck = { ok: true } | { ok: false; error: ProviderError };
+/**
+ * Result of a connectivity check. `generation: true` means a tiny real
+ * generation request succeeded (only done on free tiers); otherwise only the
+ * key and model metadata were verified.
+ */
+export type ProviderCheck = { ok: true; generation: boolean } | { ok: false; error: ProviderError };
+
+export interface CheckOptions {
+  /** Also send a minimal generation request. Only allowed for free providers. */
+  generate?: boolean;
+}
 
 export interface AiProvider {
   readonly id: string;
   readonly model: string;
   stream(request: StreamRequest): AsyncIterable<StreamEvent>;
-  /** Verifies the key and the model without generating tokens. */
-  check(signal?: AbortSignal): Promise<ProviderCheck>;
+  /** Verifies the key and the model; optionally a minimal generation. */
+  check(signal?: AbortSignal, options?: CheckOptions): Promise<ProviderCheck>;
 }
 
 export type ProviderErrorKind =
@@ -172,6 +181,12 @@ export function describeProviderError(err: ProviderError): string {
       }
       return "Le fournisseur IA refuse la clé API (clé invalide, révoquée ou mal copiée). Vérifiez la variable dans Vercel, sans espace ni guillemet, puis redéployez.";
     case "permission":
+      if (/denied access/i.test(err.detail ?? "")) {
+        return "Google bloque la génération de texte pour le projet de cette clé (« Your project has been denied access »). Ce blocage vient du compte Google, pas de JARVIS : la clé est reconnue mais n'a pas le droit de générer. Voir docs/CONFIGURATION.md › « 403 PERMISSION_DENIED ».";
+      }
+      if (/are blocked/i.test(err.detail ?? "")) {
+        return "Les restrictions de cette clé bloquent la génération de texte (API ou méthode non autorisée). Dans Google AI Studio, retirez les restrictions de la clé ou créez-en une nouvelle.";
+      }
       if (err.reason === "SERVICE_DISABLED") {
         return "La clé est valide mais l'API Gemini (Generative Language API) n'est pas activée sur son projet Google.";
       }

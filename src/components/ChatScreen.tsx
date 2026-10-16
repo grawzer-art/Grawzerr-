@@ -228,7 +228,10 @@ export default function ChatScreen() {
               ...m,
               status: "error",
               content: m.content ? `${m.content}\n\n⚠️ ${ev.message}` : ev.message,
-              meta: ev.reason ? `motif : ${ev.reason}` : m.meta,
+              meta:
+                [ev.reason ? `motif : ${ev.reason}` : "", ev.detail ? `message du fournisseur : « ${ev.detail} »` : ""]
+                  .filter(Boolean)
+                  .join(" · ") || m.meta,
             }));
           }
         }

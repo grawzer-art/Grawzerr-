@@ -11,17 +11,23 @@ export const dynamic = "force-dynamic";
 
 export interface AiCheckResult {
   ok: boolean;
+  /** True when a minimal real generation succeeded (free tiers only). */
+  generation: boolean;
   provider: string;
   label: string;
   model: string;
   keyEnv: string;
   key: { format: string; length: number };
-  error?: { kind: string; httpStatus?: number; reason?: string; message: string };
+  /** `detail` is the provider's own message, with any credential redacted. */
+  error?: { kind: string; httpStatus?: number; reason?: string; message: string; detail?: string };
 }
 
 /**
- * Verifies the configured AI key and model with a metadata request: no text
- * is generated, so it costs no tokens and no money. The key is never returned.
+ * Verifies the configured AI key and model. On free tiers it also sends one
+ * minimal generation request (a few tokens of free quota, 0 €), because a
+ * key can read model metadata yet be refused generation. Paid providers only
+ * get the metadata check, so this endpoint never spends money. The key is
+ * never returned.
  */
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) {
@@ -34,6 +40,7 @@ export async function POST(request: Request) {
   const preset = PROVIDER_PRESETS[cfg.provider];
   const base: AiCheckResult = {
     ok: false,
+    generation: false,
     provider: cfg.provider,
     label: preset.label,
     model: cfg.model,
@@ -58,9 +65,23 @@ export async function POST(request: Request) {
   const timer = setTimeout(() => controller.abort(), 10_000);
   let result: AiCheckResult;
   try {
-    const check = await provider.check(controller.signal);
+    const generate = !cfg.paid;
+    const check = await provider.check(controller.signal, { generate });
+    if (generate) {
+      // The probe counts as a request for the rate guards (free tier: cost 0).
+      await auth.supabase.from("usage_events").insert({
+        user_id: auth.user.id,
+        kind: "check",
+        provider: provider.id,
+        model: provider.model,
+        input_tokens: check.ok ? 10 : 0,
+        output_tokens: check.ok ? 5 : 0,
+        estimated_cost_usd: 0,
+        tokens_estimated: check.ok,
+      });
+    }
     result = check.ok
-      ? { ...base, model: provider.model, ok: true }
+      ? { ...base, model: provider.model, ok: true, generation: check.generation }
       : {
           ...base,
           model: provider.model,
@@ -69,6 +90,7 @@ export async function POST(request: Request) {
             httpStatus: check.error.status,
             reason: check.error.reason,
             message: describeProviderError(check.error),
+            detail: check.error.detail,
           },
         };
     if (!check.ok) {
@@ -84,7 +106,13 @@ export async function POST(request: Request) {
         keyLength: base.key.length,
       });
     } else {
-      logServer("info", "ai.check", { provider: provider.id, model: provider.model, ok: true, keyFormat: base.key.format });
+      logServer("info", "ai.check", {
+        provider: provider.id,
+        model: provider.model,
+        ok: true,
+        generation: check.generation,
+        keyFormat: base.key.format,
+      });
     }
   } catch {
     result = { ...base, error: { kind: "network", message: "Le fournisseur IA n'a pas répondu dans les 10 secondes." } };

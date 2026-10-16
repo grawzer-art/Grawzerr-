@@ -32,7 +32,8 @@ export default function AiCheck() {
         {busy ? "Test en cours…" : "Tester la connexion IA"}
       </button>
       <p className="muted small" style={{ margin: "6px 0 0" }}>
-        Vérifie la clé et le modèle sans générer de texte : aucun jeton consommé, aucun coût.
+        Vérifie la clé, le modèle et une mini-génération (quelques jetons du quota gratuit, 0 €). Pour un
+        fournisseur payant, seule la clé est vérifiée : aucun coût.
       </p>
       {error && (
         <div className="notice" data-variant="error" style={{ marginTop: 10 }}>
@@ -41,8 +42,19 @@ export default function AiCheck() {
       )}
       {result && (
         <div className="notice" data-variant={result.ok ? "info" : "error"} style={{ marginTop: 10 }} role="status">
-          <strong>{result.ok ? "Connexion IA opérationnelle." : "Connexion IA en échec."}</strong>
+          <strong>
+            {result.ok
+              ? result.generation
+                ? "Connexion IA opérationnelle : génération de texte testée avec succès."
+                : "Clé et modèle reconnus (génération non testée pour un fournisseur payant)."
+              : "Connexion IA en échec."}
+          </strong>
           {result.error && <div style={{ marginTop: 4 }}>{result.error.message}</div>}
+          {result.error?.detail && (
+            <div className="mono small" style={{ marginTop: 6 }}>
+              Message de Google : « {result.error.detail} »
+            </div>
+          )}
           <div className="mono small" style={{ marginTop: 8, opacity: 0.85 }}>
             {result.label} · modèle {result.model}
             <br />

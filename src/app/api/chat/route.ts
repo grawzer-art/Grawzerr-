@@ -181,8 +181,14 @@ export async function POST(request: Request) {
       let text = "";
       let usage: { inputTokens: number; outputTokens: number } | null = null;
       let stop = "end";
-      let failure: { code: string; message: string; reason?: string; status?: number; billed: boolean } | null =
-        null;
+      let failure: {
+        code: string;
+        message: string;
+        reason?: string;
+        detail?: string;
+        status?: number;
+        billed: boolean;
+      } | null = null;
       const startedAt = Date.now();
 
       try {
@@ -204,6 +210,7 @@ export async function POST(request: Request) {
             code: `provider_${err.kind}`,
             message: describeProviderError(err),
             reason: err.reason,
+            detail: err.detail,
             status: err.status,
             // A request rejected with an HTTP error before any output is not billed.
             billed: text.length > 0 || err.status === undefined,
@@ -298,7 +305,13 @@ export async function POST(request: Request) {
       }
 
       if (failure) {
-        send({ type: "error", code: failure.code, message: failure.message, reason: failure.reason });
+        send({
+          type: "error",
+          code: failure.code,
+          message: failure.message,
+          reason: failure.reason,
+          detail: failure.detail,
+        });
       } else {
         send({
           type: "done",

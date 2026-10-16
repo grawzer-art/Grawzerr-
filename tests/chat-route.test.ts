@@ -213,7 +213,8 @@ describe("POST /api/chat", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code, status, message } }), { status: code })));
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { events } = await post({ message: "Bonjour" });
-    expect(events.at(-1)).toMatchObject({ type: "error", code: expected });
+    // Google's own (redacted) message is passed along for diagnosis.
+    expect(events.at(-1)).toMatchObject({ type: "error", code: expected, detail: message });
     vi.restoreAllMocks();
   });
 });
