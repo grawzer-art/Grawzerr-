@@ -105,6 +105,8 @@ export type ChatStreamEvent =
       stop: string;
       usage: { inputTokens: number; outputTokens: number; estimated: boolean; costUsd: number };
       warnings: string[];
+      /** Memories JARVIS proposes, stored as "suggested" until the user confirms them. */
+      memorySuggestions?: { id: string; content: string; category: MemoryCategory }[];
     }
   /** `detail`: the provider's own message, credentials redacted. */
   | { type: "error"; code: string; message: string; reason?: string; detail?: string };

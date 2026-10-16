@@ -24,6 +24,7 @@ Ce que cela implique :
 | Journal des actions | Table `action_log` en ajout seul (non modifiable, non supprimable individuellement) |
 | Consommation | `usage_events` en ajout seul ; garde-fous budgétaires qui échouent fermés |
 | Injections de prompt | Les données (souvenirs, préférences, futurs emails/documents) sont encadrées par des balises et désignées comme données ; les chevrons sont neutralisés pour empêcher de fermer une balise |
+| Souvenirs proposés par l'IA | Toujours enregistrés comme hypothèses (`suggested`, source `assistant`), jamais utilisés comme faits avant votre validation : une injection de prompt peut au pire créer une proposition, que vous ignorez |
 | Aucun faux résultat | Le prompt interdit d'inventer des actions ; l'interface affiche les échecs et les interruptions tels quels ; les fonctions non disponibles sont marquées « à venir » |
 | Confirmations | Suppressions avec confirmation ; suppression totale avec saisie de « SUPPRIMER » |
 | Suppression des données | Fonction SQL `jarvis_delete_my_data()` : efface toutes les lignes de l'utilisateur connecté, uniquement les siennes |

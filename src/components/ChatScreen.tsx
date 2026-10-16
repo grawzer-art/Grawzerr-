@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { listMessages, loadSettings } from "@/lib/client/data";
+import { deleteMemory, listConversations, listMessages, loadSettings, updateMemory } from "@/lib/client/data";
 import { readNdjson } from "@/lib/client/ndjson";
 import { useClientValue } from "@/lib/client/useClientValue";
 import { useStatus } from "@/lib/client/useStatus";
 import { Speaker, canListen, canSpeak, listenOnce, takeSentences } from "@/lib/client/voice";
 import { getBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { TONE_LABELS, type Tone } from "@/lib/tone";
-import type { ChatStreamEvent } from "@/lib/types";
+import { MEMORY_CATEGORY_LABELS, type ChatStreamEvent, type MemoryCategory } from "@/lib/types";
 
 import Core, { CORE_STATE_LABELS, type CoreState } from "./Core";
 import { IconMic, IconPlus, IconSend, IconSpeaker, IconStop } from "./Icons";
@@ -24,6 +24,32 @@ interface UiMessage {
   tone?: string;
   meta?: string;
   warnings?: string[];
+  suggestions?: Suggestion[];
+}
+
+interface Suggestion {
+  id: string;
+  content: string;
+  category: MemoryCategory;
+  state: "pending" | "busy" | "saved" | "dismissed";
+}
+
+/** Set by "Nouvelle conversation" so that returning to this tab does not resume the previous one. */
+const FRESH_KEY = "jarvis.freshConversation";
+function setFresh(on: boolean) {
+  try {
+    if (on) sessionStorage.setItem(FRESH_KEY, "1");
+    else sessionStorage.removeItem(FRESH_KEY);
+  } catch {
+    // storage unavailable (private mode): the last conversation is simply resumed
+  }
+}
+function isFresh(): boolean {
+  try {
+    return sessionStorage.getItem(FRESH_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 const SUGGESTIONS = [
@@ -65,6 +91,8 @@ export default function ChatScreen() {
   const listRef = useRef<HTMLDivElement>(null);
   const voicePrefs = useRef({ name: "", rate: 1 });
   const voiceOutRef = useRef(false);
+  /** True once the user sent something: a late conversation restore must not overwrite it. */
+  const touchedRef = useRef(false);
 
   useEffect(() => {
     voiceOutRef.current = voiceOut;
@@ -83,24 +111,35 @@ export default function ChatScreen() {
       .catch(() => undefined);
   }, []);
 
-  // Restore a conversation from ?c=<id> (links from the history screen).
+  // Restore the conversation from ?c=<id> (history links), otherwise resume the latest one.
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("c");
     const sb = getBrowserSupabase();
-    if (!id || !sb) return;
-    listMessages(sb, id)
-      .then((rows) =>
-        setMessages(
-          rows.map((r) => ({
-            key: r.id,
-            role: r.role,
-            content: r.content,
-            status: r.status,
-            tone: r.tone ?? undefined,
-          })),
-        ),
-      )
-      .catch(() => setNotice("Impossible de charger cette conversation."));
+    if (!sb) return;
+    const restore = async () => {
+      let id = new URLSearchParams(window.location.search).get("c");
+      if (!id) {
+        if (isFresh()) return;
+        const [last] = await listConversations(sb, 1);
+        if (!last || touchedRef.current) return;
+        id = last.id;
+      }
+      const rows = await listMessages(sb, id);
+      if (touchedRef.current) return;
+      setConversationId(id);
+      const url = new URL(window.location.href);
+      url.searchParams.set("c", id);
+      window.history.replaceState(null, "", url);
+      setMessages(
+        rows.map((r) => ({
+          key: r.id,
+          role: r.role,
+          content: r.content,
+          status: r.status,
+          tone: r.tone ?? undefined,
+        })),
+      );
+    };
+    restore().catch(() => setNotice("Impossible de charger la conversation."));
   }, []);
 
   useEffect(() => {
@@ -140,6 +179,7 @@ export default function ChatScreen() {
       const text = raw.trim();
       if (!text || busy) return;
       setNotice(null);
+      touchedRef.current = true;
 
       if (!isSupabaseConfigured) {
         setNotice("Mode aperçu : connectez Supabase pour discuter avec JARVIS (voir Dashboard).");
@@ -195,6 +235,7 @@ export default function ChatScreen() {
         for await (const ev of readNdjson<ChatStreamEvent>(res.body)) {
           if (ev.type === "meta") {
             setConversationId(ev.conversationId);
+            setFresh(false);
             const url = new URL(window.location.href);
             url.searchParams.set("c", ev.conversationId);
             window.history.replaceState(null, "", url);
@@ -222,6 +263,7 @@ export default function ChatScreen() {
               status: ev.stop === "interrupted" ? "interrupted" : "complete",
               meta: `${tokens}${cost}${ev.stop === "max_tokens" ? " · réponse tronquée" : ""}`,
               warnings: ev.warnings,
+              suggestions: ev.memorySuggestions?.map((s) => ({ ...s, state: "pending" as const })),
             }));
           } else if (ev.type === "error") {
             patchBot((m) => ({
@@ -285,8 +327,32 @@ export default function ChatScreen() {
     }
   };
 
+  const answerSuggestion = async (messageKey: string, id: string, keep: boolean) => {
+    const sb = getBrowserSupabase();
+    if (!sb) return;
+    const patch = (state: Suggestion["state"]) =>
+      setMessages((list) =>
+        list.map((m) =>
+          m.key === messageKey
+            ? { ...m, suggestions: m.suggestions?.map((s) => (s.id === id ? { ...s, state } : s)) }
+            : m,
+        ),
+      );
+    patch("busy");
+    try {
+      if (keep) await updateMemory(sb, id, { status: "confirmed" });
+      else await deleteMemory(sb, id);
+      patch(keep ? "saved" : "dismissed");
+    } catch {
+      patch("pending");
+      setNotice("Impossible d'enregistrer votre choix. Réessayez, ou passez par l'écran Mémoire.");
+    }
+  };
+
   const newConversation = () => {
     interrupt();
+    touchedRef.current = true;
+    setFresh(true);
     setMessages([]);
     setConversationId(null);
     setNotice(null);
@@ -377,6 +443,38 @@ export default function ChatScreen() {
                     {m.meta && <span>{m.meta}</span>}
                   </div>
                 )}
+                {m.suggestions?.map((s) => (
+                  <div key={s.id} className="memory-proposal">
+                    <div className="muted small">
+                      {s.state === "saved"
+                        ? "Retenu — visible dans Mémoire"
+                        : s.state === "dismissed"
+                          ? "Ignoré"
+                          : `JARVIS propose de retenir · ${MEMORY_CATEGORY_LABELS[s.category]}`}
+                    </div>
+                    <div style={{ margin: "4px 0 8px", opacity: s.state === "dismissed" ? 0.5 : 1 }}>{s.content}</div>
+                    {(s.state === "pending" || s.state === "busy") && (
+                      <div className="row" style={{ justifyContent: "flex-start", gap: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={s.state === "busy"}
+                          onClick={() => void answerSuggestion(m.key, s.id, true)}
+                        >
+                          Retenir
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={s.state === "busy"}
+                          onClick={() => void answerSuggestion(m.key, s.id, false)}
+                        >
+                          Ignorer
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
                 {m.warnings?.map((w) => (
                   <div key={w} className="notice" style={{ marginTop: 8, fontSize: 13 }}>
                     {w}

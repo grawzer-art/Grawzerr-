@@ -132,6 +132,37 @@ describe("POST /api/chat", () => {
     ]);
   });
 
+  it("turns memory tags into hidden suggestions awaiting confirmation (Groq stream)", async () => {
+    vi.stubEnv("JARVIS_AI_PROVIDER", "groq");
+    vi.stubEnv("GROQ_API_KEY", "gsk_fake_route_test_0123456789");
+    db.tables.memories = [
+      { id: "m1", user_id: USER.id, content: "Aime le café.", category: "preference", importance: 3, status: "confirmed", updated_at: "2026-01-01" },
+    ];
+    const delta = (content: string) => sse({ choices: [{ delta: { content } }] });
+    mockProvider([
+      delta("Enchanté, Alex. Je propose de le retenir.\n\n<souv"),
+      delta('enir categorie="personal" importance="4">Prénom : Alex</souvenir>'),
+      delta("<souvenir categorie=\"preference\">aime le cafe</souvenir>"),
+      sse({ choices: [{ delta: {}, finish_reason: "stop" }] }),
+      "data: [DONE]\n\n",
+    ]);
+
+    const { events } = await post({ message: "Je m'appelle Alex et j'aime le café" });
+    const shown = events.filter((e) => e.type === "delta").map((e) => (e as { text: string }).text).join("");
+    expect(shown).toBe("Enchanté, Alex. Je propose de le retenir.\n\n");
+
+    // Stored as a suggestion from JARVIS, never as a confirmed fact; the duplicate is dropped.
+    const stored = db.tables.memories.filter((m) => m.source === "assistant");
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ content: "Prénom : Alex", category: "personal", importance: 4, status: "suggested" });
+    expect(events.at(-1)).toMatchObject({
+      type: "done",
+      memorySuggestions: [{ id: stored[0].id, content: "Prénom : Alex", category: "personal" }],
+    });
+    expect(db.tables.messages.at(-1)).toMatchObject({ role: "assistant", content: "Enchanté, Alex. Je propose de le retenir." });
+    expect(db.tables.action_log.some((l) => l.action === "memory.suggest")).toBe(true);
+  });
+
   it("returns 404 for an unknown conversation", async () => {
     const { res } = await post({ message: "x", conversationId: "22222222-2222-4222-8222-222222222222" });
     expect(res.status).toBe(404);
