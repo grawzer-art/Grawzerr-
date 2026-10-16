@@ -5,6 +5,7 @@ import { createProvider } from "@/lib/ai/registry";
 import { ProviderError, describeKey, describeProviderError } from "@/lib/ai/types";
 import { checkBudget, normalizeTurns, trimHistory } from "@/lib/budget";
 import { aiConfig, budgetConfig } from "@/lib/config";
+import { MemoryTagFilter, sameMemory } from "@/lib/memory-suggestions";
 import { DEFAULT_SETTINGS, buildSystemPrompt } from "@/lib/personality";
 import { isSameOrigin } from "@/lib/server/http";
 import { logAction } from "@/lib/server/log";
@@ -12,7 +13,7 @@ import { logServer } from "@/lib/server/logger";
 import { readUsageSnapshot } from "@/lib/server/usage";
 import { requireUser } from "@/lib/supabase/server";
 import { detectTone } from "@/lib/tone";
-import type { ChatStreamEvent, JarvisSettings, Memory } from "@/lib/types";
+import type { ChatStreamEvent, JarvisSettings, Memory, MemoryCategory } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -73,13 +74,13 @@ export async function POST(request: Request) {
   // ── Context: settings, memories, history ────────────────────────
   const [settingsRes, memoriesRes, historyRes] = await Promise.all([
     supabase.from("jarvis_settings").select("*").eq("user_id", user.id).maybeSingle(),
+    // Pending suggestions are read too, only to avoid proposing them twice.
     supabase
       .from("memories")
-      .select("content, category, importance, expires_at")
-      .eq("status", "confirmed")
+      .select("content, category, importance, expires_at, status")
       .order("importance", { ascending: false })
       .order("updated_at", { ascending: false })
-      .limit(80),
+      .limit(300),
     conversationId
       ? supabase
           .from("messages")
@@ -95,9 +96,14 @@ export async function POST(request: Request) {
 
   const settings: Omit<JarvisSettings, "user_id"> = { ...DEFAULT_SETTINGS, ...(settingsRes.data ?? {}) };
   const now = new Date();
-  const memories = ((memoriesRes.data ?? []) as (Pick<Memory, "content" | "category" | "importance"> & {
-    expires_at: string | null;
-  })[]).filter((m) => !m.expires_at || Date.parse(m.expires_at) > now.getTime());
+  const knownMemories = (memoriesRes.data ?? []) as Pick<
+    Memory,
+    "content" | "category" | "importance" | "expires_at" | "status"
+  >[];
+  const memories = knownMemories
+    .filter((m) => m.status === "confirmed")
+    .filter((m) => !m.expires_at || Date.parse(m.expires_at) > now.getTime())
+    .slice(0, 80);
 
   const tone = detectTone(body.message);
   const previous = ((historyRes.data ?? []) as { role: "user" | "assistant"; content: string; status: string }[])
@@ -179,7 +185,13 @@ export async function POST(request: Request) {
         model: provider.model,
       });
 
+      const memoryTags = new MemoryTagFilter();
       let text = "";
+      const emit = (chunk: string) => {
+        if (!chunk) return;
+        text += chunk;
+        send({ type: "delta", text: chunk });
+      };
       let usage: { inputTokens: number; outputTokens: number } | null = null;
       let stop = "end";
       let failure: {
@@ -195,8 +207,7 @@ export async function POST(request: Request) {
       try {
         for await (const ev of provider.stream({ system, messages: turns, maxTokens, signal: request.signal })) {
           if (ev.type === "text") {
-            text += ev.text;
-            send({ type: "delta", text: ev.text });
+            emit(memoryTags.push(ev.text));
           } else if (ev.type === "usage") {
             usage = { inputTokens: ev.inputTokens, outputTokens: ev.outputTokens };
           } else if (ev.type === "stop") {
@@ -236,6 +247,8 @@ export async function POST(request: Request) {
           });
         }
       }
+
+      emit(memoryTags.flush());
 
       // Usage is recorded even for interrupted or failed calls: tokens may have been billed.
       const notBilled = failure !== null && !failure.billed;
@@ -277,6 +290,35 @@ export async function POST(request: Request) {
           .single();
         messageId = (data?.id as string | undefined) ?? null;
       }
+      // Proposed memories wait for the user's confirmation: never stored as facts.
+      let memorySuggestions: { id: string; content: string; category: MemoryCategory }[] = [];
+      const proposals = memoryTags.suggestions.filter(
+        (s) =>
+          !knownMemories.some((m) => (m.status === "confirmed" || m.status === "suggested") && sameMemory(m.content, s.content)),
+      );
+      if (!failure && proposals.length > 0) {
+        const { data } = await supabase
+          .from("memories")
+          .insert(
+            proposals.map((s) => ({
+              user_id: user.id,
+              content: s.content,
+              category: s.category,
+              importance: s.importance,
+              status: "suggested",
+              source: "assistant",
+            })),
+          )
+          .select("id, content, category");
+        memorySuggestions = (data ?? []) as typeof memorySuggestions;
+        if (memorySuggestions.length > 0) {
+          await logAction(supabase, user.id, "memory.suggest", "success", {
+            conversationId: convId,
+            count: memorySuggestions.length,
+          });
+        }
+      }
+
       // Bumps updated_at (trigger) so the conversation rises to the top of the history.
       await supabase.from("conversations").update({ archived: false }).eq("id", convId);
       await logAction(supabase, user.id, "chat.reply", failure ? "failure" : "success", {
@@ -320,6 +362,7 @@ export async function POST(request: Request) {
           stop,
           usage: { inputTokens, outputTokens, estimated, costUsd },
           warnings: decision.warnings,
+          ...(memorySuggestions.length > 0 ? { memorySuggestions } : {}),
         });
       }
       if (!closed) {

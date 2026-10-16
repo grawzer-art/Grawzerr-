@@ -14,6 +14,7 @@ const ACTION_LABELS: Record<string, string> = {
   "memory.create": "Souvenir ajouté",
   "memory.update": "Souvenir modifié",
   "memory.delete": "Souvenir supprimé",
+  "memory.suggest": "Souvenirs proposés par JARVIS",
   "settings.update": "Paramètres modifiés",
   "conversation.delete": "Conversation supprimée",
   "ai.check": "Test de connexion IA",

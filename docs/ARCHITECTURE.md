@@ -91,7 +91,7 @@ La logique métier vit côté serveur (`/api/chat`) et dans Supabase. Une app Sw
 ## Feuille de route technique
 
 **Phase 2 — parle et mémorise**
-- Suggestions de souvenirs : le modèle propose (statut `suggested`), l'utilisateur confirme.
+- ✅ Suggestions de souvenirs (expérimental) : le modèle ajoute en fin de réponse des balises `<souvenir>` que le serveur retire du flux (`src/lib/memory-suggestions.ts`) et enregistre avec le statut `suggested` ; l'utilisateur les retient ou les ignore sous la réponse. Aucun appel IA supplémentaire.
 - Recherche sémantique : `pgvector` + embeddings (Gemini propose un modèle d'embeddings gratuit).
 - Résumés automatiques des longues conversations (`conversations.summary` existe déjà).
 - Rappels internes + Web Push (iOS 16.4+, app installée ; clés VAPID générées une fois).

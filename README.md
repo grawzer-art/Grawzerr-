@@ -23,7 +23,7 @@ Sans configuration, l'application tourne en **mode aperçu** : l'interface est v
 | PWA installable + écran hors ligne | ✅ Opérationnel | Manifeste, icônes, service worker |
 | Connexion sécurisée | ✅ Opérationnel* | Supabase Auth + liste blanche d'e-mails |
 | Conversation écrite en streaming | ✅ Opérationnel* | Interruption possible, erreurs affichées telles quelles |
-| Mémoire conversationnelle persistante | ✅ Opérationnel* | Historique, reprise des conversations |
+| Mémoire conversationnelle persistante | ✅ Opérationnel* | Historique ; JARVIS rouvre la dernière conversation, « + » en démarre une nouvelle |
 | Personnalité réglable | ✅ Opérationnel* | Humour, sarcasme, tu/vous, longueur, initiative, préférences relationnelles |
 | Fournisseurs IA interchangeables | ✅ Opérationnel* | Gemini (API native, clés « AQ. » et « AIza »), Groq, Mistral, OpenRouter, OpenAI, Claude |
 | Test de connexion IA + logs serveur | ✅ Opérationnel* | Dashboard → « Tester la connexion IA » (clé, modèle et mini-génération gratuite) ; Vercel → Logs |
@@ -33,7 +33,8 @@ Sans configuration, l'application tourne en **mode aperçu** : l'interface est v
 | Mémoire personnelle (ajout, correction, obsolète, suppression) | ✅ Opérationnel* | Confirmé ≠ hypothèse, JARVIS n'utilise que le confirmé |
 | Détection du ton | 🧪 Expérimental | Heuristique transparente, affichée sous vos messages |
 | Voix : synthèse masculine + dictée | 🧪 Expérimental | Voix natives iOS ; la dictée dépend de Safari/Siri |
-| Suggestions de souvenirs, recherche sémantique, résumés | 🔜 Phase 2 | |
+| Suggestions de souvenirs par JARVIS | 🧪 Expérimental | JARVIS propose sous sa réponse, vous touchez « Retenir » ou « Ignorer » ; rien n'est retenu sans vous |
+| Recherche sémantique, résumés automatiques | 🔜 Phase 2 | |
 | Rappels et notifications push | 🔜 Phase 2 | |
 | Gmail, Google Calendar, recherche Internet | 🔜 Phase 3 | |
 | Automatisations, briefings, Raccourcis Apple | 🔜 Phase 3 | |
@@ -47,7 +48,7 @@ Sans configuration, l'application tourne en **mode aperçu** : l'interface est v
 |---|---|---|
 | Lint | `npm run lint` | ✅ |
 | Types | `npm run typecheck` | ✅ |
-| Tests unitaires + intégration `/api/chat` et `/api/ai/check` | `npm test` | ✅ 119 tests |
+| Tests unitaires + intégration `/api/chat` et `/api/ai/check` | `npm test` | ✅ 130 tests |
 | Build de production | `npm run build` | ✅ |
 | Schéma SQL + 21 vérifications RLS (PostgreSQL 16) | CI `database` | ✅ |
 | Rendu iPhone (Chromium, 390×844) | captures manuelles | ✅ sans erreur console |
