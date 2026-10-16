@@ -45,7 +45,8 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     protocol: "openai",
     baseUrl: "https://api.groq.com/openai/v1",
     apiKeyEnv: "GROQ_API_KEY",
-    defaultModel: "llama-3.3-70b-versatile",
+    // llama-3.3-70b-versatile left the free tier on 2026-08-16; Groq recommends gpt-oss-120b.
+    defaultModel: "openai/gpt-oss-120b",
     maxTokensParam: "max_completion_tokens",
     streamUsage: true,
     isPaid: () => false,

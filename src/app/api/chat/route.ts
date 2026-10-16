@@ -53,6 +53,7 @@ export async function POST(request: Request) {
     );
   }
   // Gemini counts its internal "thinking" in maxOutputTokens: leave it room (free tier, no cost).
+  // Groq's free tier allows ~8k tokens/minute, so its replies stay at 2048.
   const maxTokens = cfg.provider === "anthropic" ? 4096 : cfg.provider === "gemini" ? 8192 : 2048;
 
   // ── Conversation ────────────────────────────────────────────────
