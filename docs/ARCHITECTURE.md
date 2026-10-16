@@ -36,7 +36,9 @@
 | `src/app/api/status` | Diagnostic de configuration (sans secret) |
 | `src/proxy.ts` | Rafraîchit la session et redirige vers `/login` |
 | `src/components/Core.tsx` | Noyau animé Canvas 2D, 5 états |
-| `src/lib/ai/*` | Fournisseurs IA, parseur SSE, tarifs |
+| `src/lib/ai/*` | Fournisseurs IA (`gemini.ts` natif, `anthropic.ts`, `openai-compatible.ts`), parseur SSE, classification des erreurs, masquage des secrets, tarifs |
+| `src/app/api/ai/check` | Test de connexion IA sans génération (0 jeton) |
+| `src/lib/server/logger.ts` | Logs serveur JSON, secrets masqués |
 | `src/lib/budget.ts` | Garde-fous de consommation (logique pure, testée) |
 | `src/lib/personality.ts` | Prompt système à partir des réglages |
 | `src/lib/tone.ts` | Détection transparente du ton |
@@ -51,7 +53,7 @@
 | Application | Next.js 16 + React 19 + TypeScript | PWA, routes serveur pour cacher les clés, un seul dépôt |
 | Hébergement | Vercel Hobby | Gratuit pour un usage personnel non commercial, déploiement par branche, se configure depuis l'iPhone |
 | Données & auth | Supabase Free | Postgres + Auth + RLS, 500 Mo, pgvector disponible pour la recherche sémantique |
-| IA | Couche fournisseurs interchangeable | Changer de modèle = changer une variable d'environnement |
+| IA | Couche fournisseurs interchangeable | Changer de modèle = changer une variable d'environnement. Gemini passe par l'API native de Google (`streamGenerateContent`, clé dans l'en-tête `x-goog-api-key`), seule compatible de façon fiable avec les clés « AQ. » ; Claude par le SDK officiel ; les autres par le protocole compatible OpenAI |
 | Voix | Web Speech API native | Gratuite, voix iOS de qualité (« Thomas »), pas de serveur audio |
 | Animations | Canvas 2D, ≤ 2× DPR, pause en arrière-plan | Fluide sur iPhone sans dépendance 3D lourde |
 

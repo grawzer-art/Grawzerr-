@@ -228,6 +228,7 @@ export default function ChatScreen() {
               ...m,
               status: "error",
               content: m.content ? `${m.content}\n\n⚠️ ${ev.message}` : ev.message,
+              meta: ev.reason ? `motif : ${ev.reason}` : m.meta,
             }));
           }
         }

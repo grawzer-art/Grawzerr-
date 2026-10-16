@@ -1,6 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-import { ProviderError, classifyStatus, type AiProvider, type StreamEvent, type StreamRequest } from "./types";
+import {
+  ProviderError,
+  classifyHttpError,
+  type AiProvider,
+  type ProviderCheck,
+  type StreamEvent,
+  type StreamRequest,
+} from "./types";
 
 /** Models that accept the server-side `fallbacks: "default"` parameter. */
 const FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"]);
@@ -35,6 +42,28 @@ export class AnthropicProvider implements AiProvider {
     // No automatic retries: a retry is a second billed request, and the budget
     // guard must see every call. The user can simply resend.
     this.client = new Anthropic({ apiKey: opts.apiKey, maxRetries: 0 });
+  }
+
+  private toProviderError(err: unknown): ProviderError | null {
+    if (err instanceof Anthropic.APIConnectionError) return new ProviderError("network", "network error");
+    if (err instanceof Anthropic.APIError) {
+      return classifyHttpError(err.status ?? 500, JSON.stringify(err.error ?? { message: err.message }), [
+        this.opts.apiKey,
+      ]);
+    }
+    return null;
+  }
+
+  async check(signal?: AbortSignal): Promise<ProviderCheck> {
+    try {
+      // Model metadata lookup: authenticated, generates no tokens.
+      await this.client.models.retrieve(this.model, {}, { signal });
+      return { ok: true };
+    } catch (err) {
+      const pe = this.toProviderError(err);
+      if (pe) return { ok: false, error: pe };
+      throw err;
+    }
   }
 
   async *stream(request: StreamRequest): AsyncGenerator<StreamEvent> {
@@ -84,14 +113,7 @@ export class AnthropicProvider implements AiProvider {
       };
     } catch (err) {
       if (request.signal?.aborted) throw err;
-      if (err instanceof Anthropic.APIConnectionError) {
-        throw new ProviderError("network", "network error");
-      }
-      if (err instanceof Anthropic.APIError) {
-        const status = err.status ?? 500;
-        throw new ProviderError(classifyStatus(status, err.message), `HTTP ${status}`, status);
-      }
-      throw err;
+      throw this.toProviderError(err) ?? err;
     }
   }
 }

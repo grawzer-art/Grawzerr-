@@ -1,5 +1,12 @@
 import { parseSse } from "./sse";
-import { ProviderError, classifyStatus, type AiProvider, type StreamEvent, type StreamRequest } from "./types";
+import {
+  ProviderError,
+  classifyHttpError,
+  type AiProvider,
+  type ProviderCheck,
+  type StreamEvent,
+  type StreamRequest,
+} from "./types";
 
 export interface OpenAiCompatibleOptions {
   id: string;
@@ -8,6 +15,8 @@ export interface OpenAiCompatibleOptions {
   model: string;
   maxTokensParam: "max_tokens" | "max_completion_tokens";
   streamUsage: boolean;
+  /** Authenticated, token-free endpoint used by check() (relative to baseUrl). */
+  checkPath?: string;
   fetchImpl?: typeof fetch;
 }
 
@@ -32,6 +41,28 @@ export class OpenAiCompatibleProvider implements AiProvider {
     this.model = opts.model;
   }
 
+  private url(path: string): string {
+    return `${this.opts.baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+  }
+
+  async check(signal?: AbortSignal): Promise<ProviderCheck> {
+    const fetchImpl = this.opts.fetchImpl ?? fetch;
+    let res: Response;
+    try {
+      res = await fetchImpl(this.url(this.opts.checkPath ?? "models"), {
+        method: "GET",
+        headers: { authorization: `Bearer ${this.opts.apiKey}` },
+        signal,
+      });
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      return { ok: false, error: new ProviderError("network", "network error") };
+    }
+    if (res.ok) return { ok: true };
+    const text = await res.text().catch(() => "");
+    return { ok: false, error: classifyHttpError(res.status, text, [this.opts.apiKey]) };
+  }
+
   async *stream(request: StreamRequest): AsyncGenerator<StreamEvent> {
     const fetchImpl = this.opts.fetchImpl ?? fetch;
     const body: Record<string, unknown> = {
@@ -44,7 +75,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
 
     let res: Response;
     try {
-      res = await fetchImpl(`${this.opts.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      res = await fetchImpl(this.url("chat/completions"), {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -60,7 +91,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
 
     if (!res.ok || !res.body) {
       const text = await res.text().catch(() => "");
-      throw new ProviderError(classifyStatus(res.status, text), `HTTP ${res.status}`, res.status);
+      throw classifyHttpError(res.status, text, [this.opts.apiKey]);
     }
 
     let stopReason: "end" | "max_tokens" | "refusal" | "other" | null = null;
@@ -73,7 +104,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
         continue;
       }
       if (chunk.error) {
-        throw new ProviderError("unavailable", "stream error");
+        throw classifyHttpError(500, JSON.stringify(chunk), [this.opts.apiKey]);
       }
       for (const choice of chunk.choices ?? []) {
         const text = choice.delta?.content;

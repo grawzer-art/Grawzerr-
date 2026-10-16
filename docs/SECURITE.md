@@ -20,6 +20,7 @@ Ce que cela implique :
 | Accès limité | `JARVIS_ALLOWED_EMAILS` : liste blanche ; vide = personne |
 | Isolation des données | RLS sur toutes les tables + `GRANT` explicites ; rôle anonyme sans accès. 21 vérifications automatisées (`supabase/tests`) |
 | Clés API côté serveur | Lues uniquement dans `src/lib/config.ts` (`server-only`) ; jamais renvoyées au client, jamais dans les messages d'erreur |
+| Logs serveur | Lignes JSON (`src/lib/server/logger.ts`) : toute valeur passe par un masquage des formats de clés connus (`AIza…`, `AQ.…`, `sk-…`, `gsk_…`, `Bearer …`, `?key=`) et de la clé configurée ; seuls le format et la longueur de la clé sont journalisés |
 | Journal des actions | Table `action_log` en ajout seul (non modifiable, non supprimable individuellement) |
 | Consommation | `usage_events` en ajout seul ; garde-fous budgétaires qui échouent fermés |
 | Injections de prompt | Les données (souvenirs, préférences, futurs emails/documents) sont encadrées par des balises et désignées comme données ; les chevrons sont neutralisés pour empêcher de fermer une balise |

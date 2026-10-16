@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { aiConfig, isEmailAllowed } from "@/lib/config";
+import { aiConfig, cleanApiKey, isEmailAllowed } from "@/lib/config";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -46,5 +46,27 @@ describe("config", () => {
     expect(aiConfig().paid).toBe(false);
     vi.stubEnv("JARVIS_AI_MODEL", "some/model");
     expect(aiConfig().paid).toBe(true);
+  });
+});
+
+describe("cleanApiKey", () => {
+  it.each([
+    ["  AQ.abc123  ", "AQ.abc123"],
+    ['"AQ.abc123"', "AQ.abc123"],
+    ["'AQ.abc123'\n", "AQ.abc123"],
+    ["GEMINI_API_KEY=AQ.abc123", "AQ.abc123"],
+    ["Bearer AQ.abc123", "AQ.abc123"],
+    ["AIzaSyABC", "AIzaSyABC"],
+  ])("%j → %s", (raw, clean) => {
+    expect(cleanApiKey(raw, "GEMINI_API_KEY")).toBe(clean);
+  });
+
+  it("is applied to the configured key", () => {
+    vi.stubEnv("JARVIS_AI_PROVIDER", "gemini");
+    vi.stubEnv("GEMINI_API_KEY", ' "AQ.abc123" ');
+    vi.stubEnv("JARVIS_AI_MODEL", '"gemini-3.5-flash"');
+    const c = aiConfig();
+    expect(c.apiKey).toBe("AQ.abc123");
+    expect(c.model).toBe("gemini-3.5-flash");
   });
 });

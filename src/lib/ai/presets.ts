@@ -1,7 +1,7 @@
 /**
- * Supported AI providers. Every provider except Anthropic is reached through
- * the OpenAI-compatible Chat Completions protocol, so adding a new one is a
- * matter of adding a preset here.
+ * Supported AI providers. Gemini uses Google's native API, Anthropic its
+ * official SDK; the others share the OpenAI-compatible Chat Completions
+ * protocol, so adding one is a matter of adding a preset here.
  */
 
 export type ProviderId = "gemini" | "groq" | "mistral" | "openrouter" | "openai" | "anthropic";
@@ -9,7 +9,7 @@ export type ProviderId = "gemini" | "groq" | "mistral" | "openrouter" | "openai"
 export interface ProviderPreset {
   id: ProviderId;
   label: string;
-  protocol: "openai" | "anthropic";
+  protocol: "gemini" | "openai" | "anthropic";
   baseUrl: string;
   apiKeyEnv: string;
   defaultModel: string;
@@ -29,8 +29,8 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
   gemini: {
     id: "gemini",
     label: "Google Gemini",
-    protocol: "openai",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    protocol: "gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     apiKeyEnv: "GEMINI_API_KEY",
     defaultModel: "gemini-flash-latest",
     maxTokensParam: "max_tokens",

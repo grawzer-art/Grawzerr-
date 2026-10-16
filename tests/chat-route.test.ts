@@ -17,6 +17,11 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 const sse = (obj: unknown) => `data: ${JSON.stringify(obj)}\n\n`;
+// Gemini native streaming chunk.
+const gem = (text: string, extra: Record<string, unknown> = {}) =>
+  sse({ candidates: [{ content: { role: "model", parts: [{ text }] }, ...extra }] });
+// Fake key in the new AI Studio format (not a real credential).
+const FAKE_KEY = "AQ.Ab8RN6FAKE-route_test_0123456789";
 
 function mockProvider(chunks: string[], status = 200) {
   const fetchMock = vi.fn(async () => new Response(status === 200 ? streamOf(chunks) : "nope", { status }));
@@ -41,7 +46,7 @@ beforeEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.stubEnv("JARVIS_AI_PROVIDER", "gemini");
-  vi.stubEnv("GEMINI_API_KEY", "test-key");
+  vi.stubEnv("GEMINI_API_KEY", FAKE_KEY);
   vi.stubEnv("JARVIS_MONTHLY_BUDGET_USD", "0");
   vi.stubEnv("JARVIS_DAILY_REQUEST_LIMIT", "200");
 });
@@ -73,10 +78,9 @@ describe("POST /api/chat", () => {
       { id: "m2", user_id: USER.id, content: "Hypothèse non validée", category: "other", importance: 5, status: "suggested", updated_at: "2026-01-01" },
     ];
     const fetchMock = mockProvider([
-      sse({ choices: [{ delta: { content: "Bonjour" } }] }),
-      sse({ choices: [{ delta: { content: ", Monsieur." }, finish_reason: "stop" }] }),
-      sse({ choices: [], usage: { prompt_tokens: 120, completion_tokens: 8 } }),
-      "data: [DONE]\n\n",
+      gem("Bonjour"),
+      gem(", Monsieur.", { finishReason: "STOP" }),
+      sse({ candidates: [], usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 8 } }),
     ]);
 
     const { res, events } = await post({ message: "Salut JARVIS, génial de te voir !" });
@@ -90,11 +94,19 @@ describe("POST /api/chat", () => {
       usage: { inputTokens: 120, outputTokens: 8, estimated: false, costUsd: 0 },
     });
 
+    // Native Gemini endpoint, key in x-goog-api-key, never as a Bearer token.
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("/v1beta/models/gemini-flash-latest:streamGenerateContent?alt=sse");
+    const headers = init.headers as Record<string, string>;
+    expect(headers["x-goog-api-key"]).toBe(FAKE_KEY);
+    expect(headers.authorization).toBeUndefined();
+
     // The system prompt carries confirmed memories only.
-    const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
-    expect(body.messages[0].content).toContain("Préfère le thé");
-    expect(body.messages[0].content).not.toContain("Hypothèse non validée");
-    expect(body.messages.at(-1)).toEqual({ role: "user", content: "Salut JARVIS, génial de te voir !" });
+    const body = JSON.parse(init.body as string);
+    const system = body.systemInstruction.parts[0].text as string;
+    expect(system).toContain("Préfère le thé");
+    expect(system).not.toContain("Hypothèse non validée");
+    expect(body.contents.at(-1)).toEqual({ role: "user", parts: [{ text: "Salut JARVIS, génial de te voir !" }] });
 
     expect(db.tables.conversations).toHaveLength(1);
     expect(db.tables.messages.map((m) => [m.role, m.content, m.status])).toEqual([
@@ -106,17 +118,17 @@ describe("POST /api/chat", () => {
   });
 
   it("sends prior turns of an existing conversation", async () => {
-    mockProvider([sse({ choices: [{ delta: { content: "A" }, finish_reason: "stop" }] })]);
+    mockProvider([gem("A", { finishReason: "STOP" })]);
     const first = await post({ message: "Premier" });
     const conversationId = (first.events[0] as { conversationId: string }).conversationId;
 
-    const fetchMock = mockProvider([sse({ choices: [{ delta: { content: "B" }, finish_reason: "stop" }] })]);
+    const fetchMock = mockProvider([gem("B", { finishReason: "STOP" })]);
     await post({ message: "Second", conversationId });
     const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
-    expect(body.messages.slice(1)).toEqual([
-      { role: "user", content: "Premier" },
-      { role: "assistant", content: "A" },
-      { role: "user", content: "Second" },
+    expect(body.contents).toEqual([
+      { role: "user", parts: [{ text: "Premier" }] },
+      { role: "model", parts: [{ text: "A" }] },
+      { role: "user", parts: [{ text: "Second" }] },
     ]);
   });
 
@@ -158,15 +170,51 @@ describe("POST /api/chat", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("reports provider errors honestly and records them", async () => {
-    mockProvider([], 401);
-    const { events } = await post({ message: "Salut" });
-    expect(events.at(-1)).toMatchObject({ type: "error", code: "provider_auth" });
+  it("reports a rejected key precisely, logs it without the key, and records no tokens", async () => {
+    const googleBody = JSON.stringify({
+      error: {
+        code: 400,
+        message: `API key not valid. Please pass a valid API key. (${FAKE_KEY})`,
+        status: "INVALID_ARGUMENT",
+        details: [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "API_KEY_INVALID" }],
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(googleBody, { status: 400 })));
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((line: unknown) => void logs.push(String(line)));
+
+    const { events } = await post({ message: "Bonjour" });
+    spy.mockRestore();
+
+    expect(events.at(-1)).toMatchObject({ type: "error", code: "provider_auth", reason: "API_KEY_INVALID" });
     const assistant = db.tables.messages.find((m) => m.role === "assistant");
     expect(assistant).toMatchObject({ status: "error" });
-    expect(db.tables.action_log.at(-1)).toMatchObject({ status: "failure" });
-    // Usage is still recorded (estimated) because a failed call may be billed.
-    expect(db.tables.usage_events[0]).toMatchObject({ tokens_estimated: true });
+    expect(db.tables.action_log.at(-1)).toMatchObject({
+      status: "failure",
+      detail: expect.objectContaining({ reason: "API_KEY_INVALID", httpStatus: 400 }),
+    });
+    // The request was rejected before generating anything: nothing was consumed.
+    expect(db.tables.usage_events[0]).toMatchObject({ input_tokens: 0, output_tokens: 0, tokens_estimated: false });
+
+    // A structured server log explains the failure without ever containing the key.
+    const line = logs.find((l) => l.includes('"event":"ai.error"'));
+    expect(line).toBeDefined();
+    const entry = JSON.parse(line!);
+    expect(entry).toMatchObject({ kind: "auth", httpStatus: 400, reason: "API_KEY_INVALID", provider: "gemini" });
+    expect(entry.keyFormat).toMatch(/^AQ\./);
+    expect(logs.join("\n")).not.toContain(FAKE_KEY);
+  });
+
+  it.each([
+    [429, "RESOURCE_EXHAUSTED", "Quota exceeded for metric generate_content_free_tier_requests, limit: 0", "provider_quota"],
+    [404, "NOT_FOUND", "models/gemini-x is not found for API version v1beta", "provider_model_not_found"],
+    [403, "PERMISSION_DENIED", "Generative Language API has not been used", "provider_permission"],
+  ])("maps Google HTTP %i %s to %s", async (code, status, message, expected) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code, status, message } }), { status: code })));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { events } = await post({ message: "Bonjour" });
+    expect(events.at(-1)).toMatchObject({ type: "error", code: expected });
+    vi.restoreAllMocks();
   });
 });
 
