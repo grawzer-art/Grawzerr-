@@ -9,7 +9,15 @@ export interface AppStatus {
   authenticated: boolean;
   email?: string;
   allowed?: boolean;
-  ai?: { provider: string; label: string; model: string; paid: boolean; note: string; keyEnv: string };
+  ai?: {
+    provider: string;
+    label: string;
+    model: string;
+    paid: boolean;
+    note: string;
+    keyEnv: string;
+    keyLikeEnvNames?: string[];
+  };
   budget?: { monthlyBudgetUsd: number; dailyRequestLimit: number; dailyTokenLimit: number; perMinuteLimit: number };
 }
 

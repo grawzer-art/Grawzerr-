@@ -1,5 +1,5 @@
 import { PROVIDER_PRESETS } from "@/lib/ai/presets";
-import { aiConfig, allowedEmails, budgetConfig, supabasePublicConfig } from "@/lib/config";
+import { aiConfig, allowedEmails, budgetConfig, keyLikeEnvNames, supabasePublicConfig } from "@/lib/config";
 import { getServerSupabase } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +36,8 @@ export async function GET() {
         paid: ai.paid,
         note: preset.note,
         keyEnv: preset.apiKeyEnv,
+        // Names only, to diagnose a misspelt variable. Values are never read here.
+        keyLikeEnvNames: ai.configured ? [] : keyLikeEnvNames(),
       },
       budget: budgetConfig(),
     },

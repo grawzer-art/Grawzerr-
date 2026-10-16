@@ -96,3 +96,14 @@ export function budgetConfig(): BudgetConfig {
     perMinuteLimit: int("JARVIS_PER_MINUTE_LIMIT", 12),
   };
 }
+
+/**
+ * Names (never values) of environment variables that look like an AI key,
+ * to spot a misspelt variable such as GROK_API_KEY instead of GROQ_API_KEY.
+ */
+export function keyLikeEnvNames(env: NodeJS.ProcessEnv = process.env): string[] {
+  return Object.keys(env)
+    .filter((name) => /(API_?KEY|GROQ|GROK|GEMINI|MISTRAL|OPENROUTER|OPENAI|ANTHROPIC)/i.test(name))
+    .filter((name) => !name.startsWith("NEXT_PUBLIC_") && !name.startsWith("VERCEL"))
+    .sort();
+}
