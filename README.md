@@ -47,7 +47,7 @@ Sans configuration, l'application tourne en **mode aperçu** : l'interface est v
 |---|---|---|
 | Lint | `npm run lint` | ✅ |
 | Types | `npm run typecheck` | ✅ |
-| Tests unitaires + intégration `/api/chat` et `/api/ai/check` | `npm test` | ✅ 116 tests |
+| Tests unitaires + intégration `/api/chat` et `/api/ai/check` | `npm test` | ✅ 118 tests |
 | Build de production | `npm run build` | ✅ |
 | Schéma SQL + 21 vérifications RLS (PostgreSQL 16) | CI `database` | ✅ |
 | Rendu iPhone (Chromium, 390×844) | captures manuelles | ✅ sans erreur console |

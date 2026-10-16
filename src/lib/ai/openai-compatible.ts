@@ -3,6 +3,7 @@ import {
   ProviderError,
   classifyHttpError,
   type AiProvider,
+  type CheckOptions,
   type ProviderCheck,
   type StreamEvent,
   type StreamRequest,
@@ -45,22 +46,37 @@ export class OpenAiCompatibleProvider implements AiProvider {
     return `${this.opts.baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
   }
 
-  async check(signal?: AbortSignal): Promise<ProviderCheck> {
+  async check(signal?: AbortSignal, options: CheckOptions = {}): Promise<ProviderCheck> {
     const fetchImpl = this.opts.fetchImpl ?? fetch;
-    let res: Response;
-    try {
-      res = await fetchImpl(this.url(this.opts.checkPath ?? "models"), {
-        method: "GET",
-        headers: { authorization: `Bearer ${this.opts.apiKey}` },
-        signal,
-      });
-    } catch (err) {
-      if (signal?.aborted) throw err;
-      return { ok: false, error: new ProviderError("network", "network error") };
-    }
-    if (res.ok) return { ok: true, generation: false };
-    const text = await res.text().catch(() => "");
-    return { ok: false, error: classifyHttpError(res.status, text, [this.opts.apiKey]) };
+    const auth = { authorization: `Bearer ${this.opts.apiKey}` };
+    const request = async (path: string, init: RequestInit): Promise<ProviderCheck | null> => {
+      let res: Response;
+      try {
+        res = await fetchImpl(this.url(path), { ...init, signal });
+      } catch (err) {
+        if (signal?.aborted) throw err;
+        return { ok: false, error: new ProviderError("network", "network error") };
+      }
+      if (res.ok) return null;
+      const text = await res.text().catch(() => "");
+      return { ok: false, error: classifyHttpError(res.status, text, [this.opts.apiKey]) };
+    };
+
+    const keyFailure = await request(this.opts.checkPath ?? "models", { method: "GET", headers: auth });
+    if (keyFailure) return keyFailure;
+    if (!options.generate) return { ok: true, generation: false };
+
+    // A key can be valid yet unable to generate: one minimal, non-streamed request proves it.
+    const genFailure = await request("chat/completions", {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: this.model,
+        messages: [{ role: "user", content: "Réponds seulement : OK" }],
+        [this.opts.maxTokensParam]: 16,
+      }),
+    });
+    return genFailure ?? { ok: true, generation: true };
   }
 
   async *stream(request: StreamRequest): AsyncGenerator<StreamEvent> {

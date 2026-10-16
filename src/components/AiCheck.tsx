@@ -46,7 +46,7 @@ export default function AiCheck() {
             {result.ok
               ? result.generation
                 ? "Connexion IA opérationnelle : génération de texte testée avec succès."
-                : "Clé et modèle reconnus (génération non testée pour un fournisseur payant)."
+                : "Clé reconnue. Génération non testée : fournisseur payant, pour ne rien dépenser."
               : "Connexion IA en échec."}
           </strong>
           {result.error && <div style={{ marginTop: 4 }}>{result.error.message}</div>}

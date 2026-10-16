@@ -115,3 +115,38 @@ describe("POST /api/ai/check", () => {
     expect(json).toMatchObject({ ok: false, error: { kind: "not_configured" }, key: { format: "absente", length: 0 } });
   });
 });
+
+describe("POST /api/ai/check — Groq (free, OpenAI-compatible)", () => {
+  it("tests the key and a minimal generation", async () => {
+    vi.stubEnv("JARVIS_AI_PROVIDER", "groq");
+    vi.stubEnv("GROQ_API_KEY", "gsk_FAKEFAKEFAKEFAKEFAKE0000");
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [], choices: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+    const { json } = await check();
+    expect(json).toMatchObject({ ok: true, generation: true, provider: "groq", model: "llama-3.3-70b-versatile" });
+    const [keyUrl, keyInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(keyUrl).toBe("https://api.groq.com/openai/v1/models");
+    expect(keyInit.method).toBe("GET");
+    const [genUrl, genInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(genUrl).toBe("https://api.groq.com/openai/v1/chat/completions");
+    const body = JSON.parse(genInit.body as string);
+    expect(body).toMatchObject({ model: "llama-3.3-70b-versatile", max_completion_tokens: 16 });
+    expect(body.stream).toBeUndefined();
+    expect(JSON.stringify(json)).not.toContain("gsk_FAKE");
+  });
+
+  it("reports a refused generation", async () => {
+    vi.stubEnv("JARVIS_AI_PROVIDER", "groq");
+    vi.stubEnv("GROQ_API_KEY", "gsk_FAKEFAKEFAKEFAKEFAKE0000");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const responses = [
+      new Response(JSON.stringify({ data: [] })),
+      new Response(JSON.stringify({ error: { message: "The model `x` does not exist", code: "model_not_found" } }), {
+        status: 404,
+      }),
+    ];
+    vi.stubGlobal("fetch", vi.fn(async () => responses.shift()!));
+    const { json } = await check();
+    expect(json).toMatchObject({ ok: false, error: { kind: "model_not_found", httpStatus: 404 } });
+  });
+});
