@@ -91,8 +91,11 @@ Si un déploiement Preview demande une connexion Vercel, c'est la protection des
 ### Voix
 
 - **Voix masculine française** : Réglages → Accessibilité → Contenu énoncé → Voix → Français → télécharge **Thomas** (version *améliorée* si proposée). Puis dans JARVIS : Paramètres → Voix → choisis-la → *Tester la voix*.
-- **Dictée** : elle utilise la reconnaissance vocale de Safari ; Siri/Dictée doivent être activés (Réglages → Général → Clavier → Activer Dictée) et le micro autorisé pour le site. Si l'icône micro n'apparaît pas, le navigateur ne fournit pas cette fonction : JARVIS ne la simule pas.
-- JARVIS n'écoute **que** lorsque tu touches le micro. Pas d'écoute permanente, ni téléphone verrouillé.
+- **Écoute** : avec `GROQ_API_KEY` dans Vercel, JARVIS enregistre ta phrase, s'arrête seul après une courte pause et la fait transcrire par **Whisper chez Groq** (niveau gratuit, aucune variable en plus). L'audio n'est pas conservé : seul le texte devient un message. Pour garder l'audio sur l'iPhone, ajoute `JARVIS_TRANSCRIPTION=off` : JARVIS repasse alors sur la dictée de Safari (Réglages → Général → Clavier → Activer Dictée), moins fiable dans l'app installée.
+- **Micro** : à la première écoute, iOS demande l'autorisation. Si tu as refusé : Safari → « aA » → Réglages du site web → Micro → Autoriser (ou Réglages → Safari → Micro).
+- **Conversation mains libres** : touche le **noyau**. JARVIS écoute, répond à voix haute, puis réécoute. Touche le noyau à nouveau pour arrêter ; il s'arrête aussi seul après quelques secondes de silence. Il ne t'entend pas pendant qu'il parle : attends la fin de sa phrase, ou touche ■ pour l'interrompre.
+- JARVIS n'écoute **que** lorsque tu touches le micro ou le noyau. Pas d'écoute permanente, ni téléphone verrouillé.
+- Chaque transcription compte comme une requête dans les garde-fous (`JARVIS_PER_MINUTE_LIMIT`, `JARVIS_DAILY_REQUEST_LIMIT`) : un échange vocal = 2 requêtes.
 
 ---
 

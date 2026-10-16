@@ -107,3 +107,27 @@ export function keyLikeEnvNames(env: NodeJS.ProcessEnv = process.env): string[] 
     .filter((name) => !name.startsWith("NEXT_PUBLIC_") && !name.startsWith("VERCEL"))
     .sort();
 }
+
+export interface TranscriptionConfig {
+  configured: boolean;
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+}
+
+/**
+ * Speech-to-text through Groq's Whisper (free tier, same GROQ_API_KEY as the
+ * chat). Set JARVIS_TRANSCRIPTION=off to keep audio on the device (Safari dictation).
+ */
+export function transcriptionConfig(): TranscriptionConfig {
+  const apiKey = cleanApiKey(process.env.GROQ_API_KEY, "GROQ_API_KEY");
+  const off = (process.env.JARVIS_TRANSCRIPTION ?? "").trim().toLowerCase() === "off";
+  const model =
+    (process.env.JARVIS_TRANSCRIPTION_MODEL ?? "").trim().replace(/^["'`]+|["'`]+$/g, "") || "whisper-large-v3-turbo";
+  return {
+    configured: apiKey.length > 0 && !off,
+    apiKey,
+    model,
+    baseUrl: PROVIDER_PRESETS.groq.baseUrl,
+  };
+}

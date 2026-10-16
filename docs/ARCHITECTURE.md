@@ -42,7 +42,9 @@
 | `src/lib/budget.ts` | Garde-fous de consommation (logique pure, testée) |
 | `src/lib/personality.ts` | Prompt système à partir des réglages |
 | `src/lib/tone.ts` | Détection transparente du ton |
-| `src/lib/client/voice.ts` | Synthèse et dictée natives |
+| `src/lib/client/voice.ts` | Synthèse vocale native, dictée Safari (repli) |
+| `src/lib/client/recorder.ts` | Micro + détection de fin de phrase (énergie du signal) |
+| `src/app/api/transcribe` | Transcription Whisper (Groq), garde-fous, audio jamais stocké |
 | `supabase/migrations` | Schéma SQL + RLS |
 | `tests/` | Tests Vitest (unitaires + intégration de `/api/chat`) |
 
@@ -54,7 +56,7 @@
 | Hébergement | Vercel Hobby | Gratuit pour un usage personnel non commercial, déploiement par branche, se configure depuis l'iPhone |
 | Données & auth | Supabase Free | Postgres + Auth + RLS, 500 Mo, pgvector disponible pour la recherche sémantique |
 | IA | Couche fournisseurs interchangeable | Changer de modèle = changer une variable d'environnement. Gemini passe par l'API native de Google (`streamGenerateContent`, clé dans l'en-tête `x-goog-api-key`), seule compatible de façon fiable avec les clés « AQ. » ; Claude par le SDK officiel ; les autres par le protocole compatible OpenAI |
-| Voix | Web Speech API native | Gratuite, voix iOS de qualité (« Thomas »), pas de serveur audio |
+| Voix | Synthèse Web Speech native ; écoute Whisper via Groq | Synthèse gratuite et locale (voix iOS « Thomas ») ; Whisper est gratuit chez Groq, très bon en français et fonctionne dans l'app installée, là où la dictée Safari est capricieuse |
 | Animations | Canvas 2D, ≤ 2× DPR, pause en arrière-plan | Fluide sur iPhone sans dépendance 3D lourde |
 
 ## Fournisseurs IA — comparatif (octobre 2026)

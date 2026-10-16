@@ -32,7 +32,7 @@ Sans configuration, l'application tourne en **mode aperçu** : l'interface est v
 | Suppression de toutes les données | ✅ Opérationnel* | Paramètres → Compte & données |
 | Mémoire personnelle (ajout, correction, obsolète, suppression) | ✅ Opérationnel* | Confirmé ≠ hypothèse, JARVIS n'utilise que le confirmé |
 | Détection du ton | 🧪 Expérimental | Heuristique transparente, affichée sous vos messages |
-| Voix : synthèse masculine + dictée | 🧪 Expérimental | Voix natives iOS ; la dictée dépend de Safari/Siri |
+| Voix : écoute, réponse parlée, conversation mains libres | 🧪 Expérimental | Écoute par Whisper chez Groq (gratuit, même clé), arrêt automatique après une pause ; touchez le noyau pour converser ; voix natives iOS. Sans Groq : dictée de Safari |
 | Suggestions de souvenirs par JARVIS | 🧪 Expérimental | JARVIS propose sous sa réponse, vous touchez « Retenir » ou « Ignorer » ; rien n'est retenu sans vous |
 | Recherche sémantique, résumés automatiques | 🔜 Phase 2 | |
 | Rappels et notifications push | 🔜 Phase 2 | |
@@ -48,7 +48,7 @@ Sans configuration, l'application tourne en **mode aperçu** : l'interface est v
 |---|---|---|
 | Lint | `npm run lint` | ✅ |
 | Types | `npm run typecheck` | ✅ |
-| Tests unitaires + intégration `/api/chat` et `/api/ai/check` | `npm test` | ✅ 130 tests |
+| Tests unitaires + intégration `/api/chat`, `/api/ai/check` et `/api/transcribe` | `npm test` | ✅ 145 tests |
 | Build de production | `npm run build` | ✅ |
 | Schéma SQL + 21 vérifications RLS (PostgreSQL 16) | CI `database` | ✅ |
 | Rendu iPhone (Chromium, 390×844) | captures manuelles | ✅ sans erreur console |
