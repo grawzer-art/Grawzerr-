@@ -26,7 +26,7 @@ Sans configuration, l'application tourne en **mode aperçu** : l'interface est v
 | Mémoire conversationnelle persistante | ✅ Opérationnel* | Historique, reprise des conversations |
 | Personnalité réglable | ✅ Opérationnel* | Humour, sarcasme, tu/vous, longueur, initiative, préférences relationnelles |
 | Fournisseurs IA interchangeables | ✅ Opérationnel* | Gemini (API native, clés « AQ. » et « AIza »), Groq, Mistral, OpenRouter, OpenAI, Claude |
-| Test de connexion IA + logs serveur | ✅ Opérationnel* | Dashboard → « Tester la connexion IA » (0 jeton) ; Vercel → Logs |
+| Test de connexion IA + logs serveur | ✅ Opérationnel* | Dashboard → « Tester la connexion IA » (clé, modèle et mini-génération gratuite) ; Vercel → Logs |
 | Garde-fous de consommation | ✅ Opérationnel* | Fournisseurs payants bloqués sans budget, plafonds, alertes |
 | Journal d'activité | ✅ Opérationnel* | Écran Historique |
 | Suppression de toutes les données | ✅ Opérationnel* | Paramètres → Compte & données |
@@ -47,7 +47,7 @@ Sans configuration, l'application tourne en **mode aperçu** : l'interface est v
 |---|---|---|
 | Lint | `npm run lint` | ✅ |
 | Types | `npm run typecheck` | ✅ |
-| Tests unitaires + intégration `/api/chat` et `/api/ai/check` | `npm test` | ✅ 112 tests |
+| Tests unitaires + intégration `/api/chat` et `/api/ai/check` | `npm test` | ✅ 116 tests |
 | Build de production | `npm run build` | ✅ |
 | Schéma SQL + 21 vérifications RLS (PostgreSQL 16) | CI `database` | ✅ |
 | Rendu iPhone (Chromium, 390×844) | captures manuelles | ✅ sans erreur console |

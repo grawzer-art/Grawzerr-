@@ -99,7 +99,7 @@ Si un déploiement Preview demande une connexion Vercel, c'est la protection des
 ## Étape 5 — Vérifier
 
 1. Dans JARVIS → **Dashboard** → *Diagnostic* : les trois lignes doivent être **OK**.
-2. Touche **« Tester la connexion IA »** : JARVIS interroge Google sur la clé et le modèle **sans générer de texte** (aucun jeton, aucun coût). Le résultat affiche le format de la clé (jamais sa valeur), le code HTTP et le motif exact donné par Google.
+2. Touche **« Tester la connexion IA »**. JARVIS vérifie la clé et le modèle, puis envoie **une mini-génération** (quelques jetons du quota gratuit, 0 €). Une clé peut en effet être reconnue tout en étant interdite de génération. Pour un fournisseur payant, seule la clé est vérifiée, sans aucune génération. Le résultat affiche le format de la clé (jamais sa valeur), le code HTTP, le motif et le message exacts donnés par Google.
 3. Écris « Bonjour » sur l'écran JARVIS.
 
 ### Lire les logs serveur depuis l'iPhone
@@ -111,11 +111,23 @@ Vercel → projet → **Logs** (ou *Deployments* → le déploiement → *Logs*)
 | Ce que montre JARVIS (code HTTP · motif) | Signification | Que faire |
 |---|---|---|
 | `401 · ACCESS_TOKEN_TYPE_UNSUPPORTED` ou `400 · API_KEY_INVALID` | Google ne reconnaît pas la clé | Créer une nouvelle clé dans AI Studio, la recoller dans Vercel, redéployer |
+| `403 · PERMISSION_DENIED` + « Your project has been denied access » | La clé est reconnue, mais Google refuse la **génération** pour ce projet/compte | Voir la section « 403 PERMISSION_DENIED » ci-dessous |
 | `403 · SERVICE_DISABLED` | API Gemini non activée sur le projet de la clé | Créer la clé depuis AI Studio (qui active l'API automatiquement) |
 | `403 · API_KEY_…_BLOCKED` | Restrictions de clé (site, IP, API) | Retirer les restrictions de la clé |
+| `403` + « … are blocked » | Restrictions de la clé (API ou méthode non autorisée) | Retirer les restrictions de la clé ou en créer une nouvelle |
 | `404` | Modèle inconnu | Supprimer `JARVIS_AI_MODEL` ou mettre un modèle existant (ex. `gemini-3.5-flash`) |
 | `429` « quota » | Quota gratuit épuisé | Attendre la réinitialisation (quotidienne). Ne pas activer la facturation |
 | `429` sans quota | Trop de requêtes par minute | Patienter une minute |
+
+### 403 PERMISSION_DENIED : clé reconnue, génération refusée
+
+Le test du Dashboard le montre ainsi : « Connexion IA en échec », `HTTP 403 · PERMISSION_DENIED`, avec le message de Google. Le plus fréquent est « Your project has been denied access ». Google accepte la clé (lecture du modèle) mais bloque la génération pour le projet ou le compte. Le code de JARVIS ne peut pas le contourner. À essayer dans l'ordre, sans jamais activer la facturation :
+
+1. **Autre modèle** : dans Vercel, ajoute `JARVIS_AI_MODEL=gemini-2.5-flash`, redéploie, puis relance le test du Dashboard.
+2. **Compte Google** : sur myaccount.google.com → *Sécurité*, active la **validation en deux étapes** et vérifie ton **numéro de téléphone**. Puis, dans AI Studio, crée une clé dans un **nouveau projet**, remplace `GEMINI_API_KEY` dans Vercel et redéploie.
+3. **Solution immédiate et gratuite : Groq.** Sur console.groq.com, crée un compte (sans carte bancaire) → *API Keys* → *Create API Key* (la clé commence par `gsk_`). Dans Vercel : `JARVIS_AI_PROVIDER=groq` et `GROQ_API_KEY=<la clé>`, puis redéploie. Tu pourras revenir à Gemini plus tard en remettant `JARVIS_AI_PROVIDER=gemini`.
+
+Certains conseils en ligne recommandent d'activer la facturation Google pour lever le blocage. **Ne le fais pas** : cela rendrait possible une dépense.
 
 ### Dépannage
 

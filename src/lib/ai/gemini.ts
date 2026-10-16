@@ -3,6 +3,7 @@ import {
   ProviderError,
   classifyHttpError,
   type AiProvider,
+  type CheckOptions,
   type ProviderCheck,
   type StreamEvent,
   type StreamRequest,
@@ -79,15 +80,30 @@ export class GeminiProvider implements AiProvider {
     throw classifyHttpError(res.status, body, [this.opts.apiKey]);
   }
 
-  async check(signal?: AbortSignal): Promise<ProviderCheck> {
+  async check(signal?: AbortSignal, options: CheckOptions = {}): Promise<ProviderCheck> {
     try {
-      const res = await this.send(`${this.baseUrl}/models/${encodeURIComponent(this.model)}`, {
+      const model = encodeURIComponent(this.model);
+      const res = await this.send(`${this.baseUrl}/models/${model}`, {
         method: "GET",
         headers: this.headers(),
         signal,
       });
       if (!res.ok) await this.fail(res);
-      return { ok: true };
+      if (!options.generate) return { ok: true, generation: false };
+
+      // Reading model metadata can succeed while generation is refused
+      // (403 PERMISSION_DENIED): only a real, minimal request proves it works.
+      const gen = await this.send(`${this.baseUrl}/models/${model}:generateContent`, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "Réponds seulement : OK" }] }],
+          generationConfig: { maxOutputTokens: 64 },
+        }),
+        signal,
+      });
+      if (!gen.ok) await this.fail(gen);
+      return { ok: true, generation: true };
     } catch (err) {
       if (err instanceof ProviderError) return { ok: false, error: err };
       throw err;

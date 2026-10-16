@@ -186,7 +186,8 @@ describe("GeminiProvider — errors", () => {
 describe("GeminiProvider — check()", () => {
   it("validates key and model with a token-free GET on the model", async () => {
     const { provider, fetchImpl } = make(new Response(JSON.stringify({ name: "models/gemini-flash-latest" })));
-    expect(await provider.check()).toEqual({ ok: true });
+    expect(await provider.check()).toEqual({ ok: true, generation: false });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = call(fetchImpl);
     expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest");
     expect(init.method).toBe("GET");
@@ -198,5 +199,35 @@ describe("GeminiProvider — check()", () => {
     const res = await provider.check();
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toMatchObject({ kind: "auth", reason: "API_KEY_INVALID", status: 400 });
+  });
+
+  it("can also prove that generation works with one minimal request", async () => {
+    const { provider, fetchImpl } = make(() => new Response(JSON.stringify({ candidates: [] })));
+    expect(await provider.check(undefined, { generate: true })).toEqual({ ok: true, generation: true });
+    const [url, init] = call(fetchImpl, 1);
+    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string).generationConfig).toEqual({ maxOutputTokens: 64 });
+  });
+
+  it("detects a key that reads metadata but is refused generation (403 denied access)", async () => {
+    const responses = [
+      new Response(JSON.stringify({ name: "models/gemini-flash-latest" })),
+      new Response(
+        JSON.stringify({
+          error: { code: 403, message: "Your project has been denied access. Please contact support.", status: "PERMISSION_DENIED" },
+        }),
+        { status: 403 },
+      ),
+    ];
+    const fetchImpl = vi.fn(async () => responses.shift()!);
+    const provider = new GeminiProvider({ apiKey: KEY, model: "gemini-flash-latest", fetchImpl: fetchImpl as unknown as typeof fetch });
+    const res = await provider.check(undefined, { generate: true });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toMatchObject({ kind: "permission", status: 403, reason: "PERMISSION_DENIED" });
+      expect(res.error.detail).toBe("Your project has been denied access. Please contact support.");
+      expect(describeProviderError(res.error)).toMatch(/Google bloque la génération/);
+    }
   });
 });

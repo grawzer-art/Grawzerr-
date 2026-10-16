@@ -58,7 +58,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
       if (signal?.aborted) throw err;
       return { ok: false, error: new ProviderError("network", "network error") };
     }
-    if (res.ok) return { ok: true };
+    if (res.ok) return { ok: true, generation: false };
     const text = await res.text().catch(() => "");
     return { ok: false, error: classifyHttpError(res.status, text, [this.opts.apiKey]) };
   }
